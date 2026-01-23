@@ -1,61 +1,41 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "max-techera-plugins",
-  "description": "Claude Code plugins for content creators, founders, and developers. Battle-tested frameworks from building SaaS products and growing audiences.",
+  "description": "Simple, focused Claude Code plugins for developers and creators.",
   "owner": {
     "name": "Max Techera",
     "email": "max@maxtechera.dev"
   },
   "plugins": [
     {
-      "name": "hormozi-frameworks",
-      "description": "Complete $100M Offers, Leads, and Money Models frameworks for building irresistible offers and scaling businesses",
+      "name": "dev-essentials",
+      "description": "Code review and debugging for React/Next.js",
       "version": "1.0.0",
       "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
-      "source": "./plugins/hormozi-frameworks",
-      "category": "productivity",
-      "tags": ["marketing", "offers", "leads", "copywriting", "business"],
-      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/hormozi-frameworks"
+      "source": "./plugins/dev-essentials",
+      "category": "development",
+      "tags": ["react", "nextjs", "performance", "debugging", "code-review"],
+      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/dev-essentials"
     },
     {
-      "name": "content-creator",
-      "description": "Complete content creation system with viral patterns, AI-proof writing, and 1-to-15 multiplication workflows",
+      "name": "productivity",
+      "description": "Sabotage pattern detection to stay focused and ship",
       "version": "1.0.0",
       "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
-      "source": "./plugins/content-creator",
+      "source": "./plugins/productivity",
       "category": "productivity",
-      "tags": ["content", "viral", "writing", "social-media", "youtube"],
-      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/content-creator"
+      "tags": ["focus", "shipping", "sabotage", "productivity"],
+      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/productivity"
     },
     {
-      "name": "creator-os",
-      "description": "Personal operating system for creators with state management, weekly rituals, and self-sabotage detection",
+      "name": "hormozi",
+      "description": "Value Equation from $100M Offers for pricing",
       "version": "1.0.0",
       "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
-      "source": "./plugins/creator-os",
+      "source": "./plugins/hormozi",
       "category": "productivity",
-      "tags": ["productivity", "operations", "planning", "habits", "founder"],
-      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/creator-os"
-    },
-    {
-      "name": "growth-operator",
-      "description": "Growth and funnel optimization with A/B testing strategies and conversion tactics",
-      "version": "1.0.0",
-      "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
-      "source": "./plugins/growth-operator",
-      "category": "productivity",
-      "tags": ["growth", "funnel", "conversion", "testing", "marketing"],
-      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/growth-operator"
-    },
-    {
-      "name": "youtube-creator",
-      "description": "YouTube-specific content creation with scripting templates and video production workflows",
-      "version": "1.0.0",
-      "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
-      "source": "./plugins/youtube-creator",
-      "category": "productivity",
-      "tags": ["youtube", "video", "scripting", "content", "creator"],
-      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/youtube-creator"
+      "tags": ["offers", "pricing", "value", "business"],
+      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/hormozi"
     }
   ]
 }

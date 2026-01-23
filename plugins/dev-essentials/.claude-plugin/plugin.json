@@ -1,0 +1,11 @@
+{
+  "name": "dev-essentials",
+  "description": "Code review, performance checks, and debugging helpers for React/Next.js",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "development",
+  "keywords": ["react", "nextjs", "performance", "code-review", "debugging"]
+}

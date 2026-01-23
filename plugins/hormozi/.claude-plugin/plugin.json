@@ -1,0 +1,11 @@
+{
+  "name": "hormozi",
+  "description": "Value Equation from $100M Offers for pricing and positioning",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["offers", "pricing", "value", "hormozi"]
+}

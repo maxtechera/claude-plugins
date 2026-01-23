@@ -1,0 +1,11 @@
+{
+  "name": "youtube-creator",
+  "description": "YouTube-specific content creation with scripting templates and video production workflows",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["youtube", "video", "scripting", "content", "creator", "production"]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "content-creator",
+  "description": "Complete content creation system with viral patterns, AI-proof writing, and 1-to-15 multiplication workflows",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["content", "viral", "writing", "social-media", "youtube", "multiplication"]
+}

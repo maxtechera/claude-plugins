@@ -1,0 +1,11 @@
+{
+  "name": "growth-operator",
+  "description": "Growth and funnel optimization with A/B testing strategies and conversion tactics",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["growth", "funnel", "conversion", "testing", "marketing", "analytics"]
+}

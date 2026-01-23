@@ -1,0 +1,11 @@
+{
+  "name": "creator-os",
+  "description": "Personal operating system for creators with state management, weekly rituals, and self-sabotage detection",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["productivity", "operations", "planning", "habits", "founder", "creator"]
+}

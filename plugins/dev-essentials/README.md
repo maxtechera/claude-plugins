@@ -14,6 +14,8 @@ Code review and debugging tools for React/Next.js.
 | Command | Description |
 |---------|-------------|
 | `/review` | Review code for performance issues |
+| `/commit` | Create well-formatted git commits |
+| `/push` | Push commits and create PRs |
 
 ## Quick Start
 

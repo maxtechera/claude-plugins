@@ -8,12 +8,18 @@ Viral hooks and content patterns for creators.
 |-------|---------|
 | `viral-hooks` | Write hooks that stop the scroll |
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/find-topic` | Find winning content topics |
+
 ## Quick Start
 
 ```
 "Write a hook for my video about [topic]"
 "Score this hook using STEPPS"
-"Make this title more clickable"
+"/find-topic"
 ```
 
 ## Key Patterns

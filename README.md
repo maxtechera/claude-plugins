@@ -4,12 +4,12 @@ Simple, focused plugins for Claude Code.
 
 ## Plugins
 
-| Plugin | Description | Skills |
-|--------|-------------|--------|
-| `dev-essentials` | React/Next.js code review and debugging | `react-performance`, `debugging` |
-| `hormozi` | Value Equation for pricing | `value-equation` |
-| `content-creator` | Viral hooks and content patterns | `viral-hooks` |
-| `youtube` | Video scripting templates | `scripting` |
+| Plugin | Description | Skills | Commands |
+|--------|-------------|--------|----------|
+| `dev-essentials` | Code review, debugging, git | `react-performance`, `debugging` | `/review`, `/commit`, `/push` |
+| `hormozi` | Value Equation for pricing | `value-equation` | - |
+| `content-creator` | Viral hooks and topics | `viral-hooks` | `/find-topic` |
+| `youtube` | Video scripting | `scripting` | - |
 
 ## Installation
 

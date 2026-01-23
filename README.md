@@ -14,10 +14,14 @@ Simple, focused plugins for Claude Code.
 ## Installation
 
 ```bash
-/plugin install dev-essentials
-/plugin install hormozi
-/plugin install content-creator
-/plugin install youtube
+# Add the marketplace (once)
+/plugin marketplace add maxtechera/claude-plugins
+
+# Install plugins by name
+/plugin install dev-essentials@max-techera-plugins
+/plugin install hormozi@max-techera-plugins
+/plugin install content-creator@max-techera-plugins
+/plugin install youtube@max-techera-plugins
 ```
 
 ## Usage Examples

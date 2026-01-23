@@ -1,0 +1,11 @@
+{
+  "name": "youtube",
+  "description": "YouTube scripting and video structure templates",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["youtube", "video", "scripting", "creator"]
+}

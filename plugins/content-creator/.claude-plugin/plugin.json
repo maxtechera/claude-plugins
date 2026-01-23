@@ -1,0 +1,11 @@
+{
+  "name": "content-creator",
+  "description": "Viral hooks and content patterns for creators",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "productivity",
+  "keywords": ["content", "viral", "hooks", "social-media", "creator"]
+}

@@ -7,25 +7,17 @@ Simple, focused plugins for Claude Code.
 | Plugin | Description | Skills |
 |--------|-------------|--------|
 | `dev-essentials` | React/Next.js code review and debugging | `react-performance`, `debugging` |
-| `productivity` | Sabotage pattern detection | `sabotage-check` |
 | `hormozi` | Value Equation for pricing | `value-equation` |
+| `content-creator` | Viral hooks and content patterns | `viral-hooks` |
+| `youtube` | Video scripting templates | `scripting` |
 
 ## Installation
 
-### Quick Install
 ```bash
 /plugin install dev-essentials
-/plugin install productivity
 /plugin install hormozi
-```
-
-### From Marketplace
-```bash
-# Add marketplace
-claude plugin add-marketplace https://github.com/maxtechera/claude-plugins
-
-# Install any plugin
-/plugin install dev-essentials@max-techera-plugins
+/plugin install content-creator
+/plugin install youtube
 ```
 
 ## Usage Examples
@@ -37,43 +29,29 @@ claude plugin add-marketplace https://github.com/maxtechera/claude-plugins
 "/review src/components/MyComponent.tsx"
 ```
 
-### Productivity
-```
-"Am I sabotaging myself right now?"
-"Run a sabotage check"
-```
-
 ### Hormozi
 ```
 "Score my offer using the value equation"
 "Make this offer more valuable"
 ```
 
-## Plugin Structure
-
-Each plugin follows Anthropic's plugin spec:
+### Content Creator
 ```
-plugin-name/
-├── .claude-plugin/
-│   └── plugin.json     # Metadata
-├── skills/
-│   └── skill-name/
-│       └── SKILL.md    # Skill definition
-├── commands/           # Optional slash commands
-└── README.md
+"Write a hook for my video about [topic]"
+"Score this hook using STEPPS"
+```
+
+### YouTube
+```
+"Write a script for a video about [topic]"
+"Structure my video using the hook-intro-body-close format"
 ```
 
 ## Manual Installation
 
 ```bash
-# Clone the repo
 git clone https://github.com/maxtechera/claude-plugins
-
-# Copy to your project
 cp -r claude-plugins/plugins/dev-essentials .claude/plugins/
-
-# Or global install
-cp -r claude-plugins/plugins/dev-essentials ~/.claude/plugins/
 ```
 
 ## Workshop

@@ -18,16 +18,6 @@
       "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/dev-essentials"
     },
     {
-      "name": "productivity",
-      "description": "Sabotage pattern detection to stay focused and ship",
-      "version": "1.0.0",
-      "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
-      "source": "./plugins/productivity",
-      "category": "productivity",
-      "tags": ["focus", "shipping", "sabotage", "productivity"],
-      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/productivity"
-    },
-    {
       "name": "hormozi",
       "description": "Value Equation from $100M Offers for pricing",
       "version": "1.0.0",
@@ -36,6 +26,26 @@
       "category": "productivity",
       "tags": ["offers", "pricing", "value", "business"],
       "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/hormozi"
+    },
+    {
+      "name": "content-creator",
+      "description": "Viral hooks and content patterns for creators",
+      "version": "1.0.0",
+      "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
+      "source": "./plugins/content-creator",
+      "category": "productivity",
+      "tags": ["content", "viral", "hooks", "social-media"],
+      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/content-creator"
+    },
+    {
+      "name": "youtube",
+      "description": "YouTube scripting and video structure templates",
+      "version": "1.0.0",
+      "author": { "name": "Max Techera", "email": "max@maxtechera.dev" },
+      "source": "./plugins/youtube",
+      "category": "productivity",
+      "tags": ["youtube", "video", "scripting", "creator"],
+      "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/youtube"
     }
   ]
 }

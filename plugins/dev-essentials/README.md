@@ -1,6 +1,18 @@
 # Dev Essentials Plugin
 
-Code review and debugging tools for React/Next.js.
+Essential development commands for everyday coding workflows.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/commit` | Create well-formatted git commits |
+| `/push` | Push commits to remote |
+| `/pr` | Create a pull request with proper description |
+| `/review` | Review code for performance issues |
+| `/test` | Run and analyze test results |
+| `/implement` | Implement a feature or fix with planning |
+| `/explore` | Explore and understand the codebase |
 
 ## Skills
 
@@ -9,20 +21,14 @@ Code review and debugging tools for React/Next.js.
 | `react-performance` | Performance rules when writing/reviewing code |
 | `debugging` | Structured approach to fixing errors |
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/review` | Review code for performance issues |
-| `/commit` | Create well-formatted git commits |
-| `/push` | Push commits and create PRs |
-
 ## Quick Start
 
 ```
-"Review this component for performance issues"
-"Help me debug this error: [paste error]"
-"Apply react-performance rules to this code"
+/commit              # Commit staged changes
+/pr                  # Create a pull request
+/test                # Run tests
+/implement <task>    # Implement a feature
+/explore <question>  # Understand the codebase
 ```
 
 ## Key Rules

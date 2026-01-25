@@ -1,0 +1,75 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vercel --version:*)",
+      "Bash(npx vercel:*)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(ls:*)",
+      "Bash(git rm:*)",
+      "Bash(chmod:*)",
+      "Bash(bash scripts/check-state-sync.sh:*)",
+      "Bash(git commit:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "playwright",
+    "context7",
+    "mailerlite",
+    "vercel"
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ \"$CLAUDE_TOOL_INPUT_FILE_PATH\" == *\"_docs/\"*\".json\" ]]; then python3 -m json.tool \"$CLAUDE_TOOL_INPUT_FILE_PATH\" > /dev/null 2>&1 && echo 'JSON valid' || echo 'Warning: JSON syntax error in state file' >&2; fi",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE '^git commit'; then echo '[MAX_OS_SYNC] Commit detected. After this session, run /sync-state to update state files.'; if ! echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE '(feat|fix|ship|docs|refactor|chore):'; then echo '[MAX_OS_WARN] Commit message should use type prefix (feat:, fix:, ship:, docs:, refactor:, chore:)' >&2; fi; fi",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "last_sync=$(grep -o '\"last_updated\": *\"[^\"]*\"' _docs/OPERATIONS/priorities.json 2>/dev/null | head -1 | sed 's/\"last_updated\": *\"//;s/\"$//'); if [ -n \"$last_sync\" ]; then days_old=$(( ($(date +%s) - $(date -d \"$last_sync\" +%s 2>/dev/null || echo 0)) / 86400 )); commits_since=$(git log --oneline --since=\"$last_sync\" 2>/dev/null | wc -l); if [ \"$commits_since\" -gt 5 ] || [ \"$days_old\" -gt 2 ]; then echo \"[MAX_OS] $commits_since commits since last state sync ($days_old days ago). Consider running /sync-state\"; fi; fi",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[PRE-COMPACT] Current P0:' && grep -A2 '\"P0\"' _docs/OPERATIONS/priorities.json 2>/dev/null | grep -o '\"task\": *\"[^\"]*\"' | head -3 | sed 's/\"task\": *\"//;s/\"$/  • /' && echo 'Last 3 commits:' && git log --oneline -3 | sed 's/^/  /'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

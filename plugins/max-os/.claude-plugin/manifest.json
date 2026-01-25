@@ -1,0 +1,11 @@
+{
+  "name": "max-os",
+  "version": "1.0.0",
+  "description": "Claude Code configuration for Max OS personal operating system",
+  "author": "Max Techera",
+  "type": "config",
+  "components": {
+    "statusline": "config/statusline-command.sh",
+    "hooks": "config/hooks.json"
+  }
+}

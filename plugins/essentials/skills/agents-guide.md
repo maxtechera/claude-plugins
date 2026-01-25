@@ -287,6 +287,91 @@ claude --agents '{
 
 ---
 
+## Lifecycle Hooks
+
+### Agent-Scoped Hooks (in agent frontmatter)
+
+```yaml
+---
+name: code-reviewer
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "./scripts/validate-command.sh"
+  PostToolUse:
+    - matcher: "Edit|Write"
+      hooks:
+        - type: command
+          command: "./scripts/run-linter.sh"
+---
+```
+
+### Project-Level Agent Hooks (in settings.json)
+
+Respond to agent lifecycle events:
+
+```json
+{
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "db-agent",
+        "hooks": [
+          { "type": "command", "command": "./scripts/setup-db.sh" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "db-agent",
+        "hooks": [
+          { "type": "command", "command": "./scripts/cleanup-db.sh" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Resuming & Managing Agents
+
+### Resume Agents
+
+Each invocation creates fresh context. To continue:
+
+```
+Continue that code review and now analyze the authorization logic
+```
+
+Resumed agents retain full conversation history including previous tool calls.
+
+### Auto-Compaction
+
+Agents automatically compact when reaching 95% capacity:
+
+```bash
+# Override compaction threshold
+CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50 claude
+```
+
+### Disable Specific Agents
+
+Prevent Claude from using certain agents in `settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": ["Task(Explore)", "Task(my-custom-agent)"]
+  }
+}
+```
+
+---
+
 ## Common Patterns
 
 ### Isolate High-Volume Operations
@@ -295,11 +380,15 @@ claude --agents '{
 Use a subagent to run the test suite and report only failing tests
 ```
 
+Test output stays in agent context, only summary returns.
+
 ### Parallel Research
 
 ```
 Research authentication, database, and API modules in parallel using separate subagents
 ```
+
+Each agent explores independently, Claude synthesizes findings.
 
 ### Chain Agents (Sequential)
 
@@ -307,9 +396,23 @@ Research authentication, database, and API modules in parallel using separate su
 Use code-reviewer to find issues, then use optimizer to fix them
 ```
 
+First agent returns results, Claude passes context to second agent.
+
 ---
 
 ## Quick Start
+
+### Method 1: Interactive GUI (Recommended)
+
+```bash
+claude
+/agents
+# Select "Create new agent"
+# Choose scope (User, Project, or Generate with Claude)
+# Follow interactive prompts
+```
+
+### Method 2: Manual File Creation
 
 ```bash
 # Create agent file
@@ -329,7 +432,21 @@ Your responsibilities:
 2. [Task 2]
 EOF
 
-# Restart Claude Code to load
+# Restart Claude Code to load, or use /agents to reload
+```
+
+### Method 3: CLI Flag (Temporary, Session-Only)
+
+```bash
+claude --agents '{
+  "my-agent": {
+    "name": "my-agent",
+    "description": "...",
+    "prompt": "You are...",
+    "tools": ["Read", "Grep"],
+    "model": "sonnet"
+  }
+}'
 ```
 
 ---

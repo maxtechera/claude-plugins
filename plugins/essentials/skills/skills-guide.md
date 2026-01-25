@@ -32,9 +32,26 @@ Every skill is a directory with a required `SKILL.md` file:
 
 | Scope | Path | Priority |
 |-------|------|----------|
-| **Project** | `.claude/skills/<skill-name>/` | 1 (highest) |
-| **Personal** | `~/.claude/skills/<skill-name>/` | 2 |
-| **Plugin** | `<plugin>/skills/<skill-name>/` | 3 |
+| **Enterprise** | Managed by admin | 1 (highest) |
+| **Project** | `.claude/skills/<skill-name>/` | 2 |
+| **Personal** | `~/.claude/skills/<skill-name>/` | 3 |
+| **Plugin** | `<plugin>/skills/<skill-name>/` | 4 (lowest) |
+
+### Monorepo Support
+
+Claude Code discovers skills from nested `.claude/skills/` directories:
+
+```
+my-monorepo/
+├── .claude/skills/              # Root skills (all packages)
+├── packages/
+│   ├── frontend/
+│   │   └── .claude/skills/      # Frontend-specific skills
+│   └── backend/
+│       └── .claude/skills/      # Backend-specific skills
+```
+
+Working in `packages/frontend/` → Claude finds skills from both that directory AND parent directories.
 
 ---
 
@@ -246,6 +263,41 @@ EOF
 
 ---
 
+## Context Management & Costs
+
+### How Skills Load
+
+**Skill descriptions** always load into context:
+- ~50-150 characters per skill
+- 26 skills ≈ 5-10KB context cost
+- Worth it for discoverability
+
+**Full skill content** loads ONLY when:
+- Invoked by user (`/skill-name`)
+- Auto-invoked by Claude (matching description)
+- Preloaded in subagent config
+
+### Optimization Strategies
+
+1. **Move large docs to supporting files**
+   - SKILL.md = 100 lines (overview)
+   - reference.md = 500 lines (detailed patterns)
+
+2. **Use `disable-model-invocation: true`** for action skills
+   - Reduces context overhead
+   - Claude doesn't consider for auto-invocation
+
+3. **Set explicit `model`** for heavy skills
+   - `haiku` for exploration
+   - `sonnet` for copywriting
+
+4. **Adjust context budget** (environment variable):
+   ```bash
+   export SLASH_COMMAND_TOOL_CHAR_BUDGET=50000
+   ```
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -253,3 +305,5 @@ EOF
 | Skill not triggering | Check description matches keywords user said |
 | Skill triggers too often | Make description more specific |
 | Claude doesn't see skills | Run `/context` to check token budget |
+| Too many skills | Increase `SLASH_COMMAND_TOOL_CHAR_BUDGET` |
+| Skill loads slowly | Move large content to reference.md |

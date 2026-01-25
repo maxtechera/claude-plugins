@@ -89,6 +89,33 @@ Find all references and show context.
 
 ---
 
+## Dynamic Context (Preprocessing)
+
+The `` !`command` `` syntax runs shell commands **BEFORE** Claude sees anything:
+
+```yaml
+---
+name: git-status
+description: Show git status with context
+---
+
+## Current State
+- Branch: !`git branch --show-current`
+- Status: !`git status --short`
+- Recent commits: !`git log --oneline -5`
+
+Analyze the current git state and suggest next steps.
+```
+
+**How it works**:
+1. Each `` !`command` `` runs immediately when skill loads
+2. Output replaces the placeholder
+3. Claude receives final rendered prompt with actual data
+
+**Use for**: Live data (GitHub, databases, APIs) without Claude executing commands.
+
+---
+
 ## Controlling Invocation
 
 ### Manual-Only Commands

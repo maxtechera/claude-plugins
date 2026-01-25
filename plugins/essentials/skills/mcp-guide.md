@@ -164,47 +164,135 @@ mkdir src && touch src/index.ts
 }
 ```
 
-**src/index.ts**:
+**src/index.ts** (Complete Example):
 
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+// Type definitions
+interface WeatherResponse {
+  temperature: number;
+  conditions: string;
+  humidity: number;
+}
+
+interface AlertFeature {
+  properties: {
+    event?: string;
+    areaDesc?: string;
+    severity?: string;
+  };
+}
+
+interface AlertsResponse {
+  features: AlertFeature[];
+}
+
+const NWS_API_BASE = "https://api.weather.gov";
+const USER_AGENT = "weather-mcp/1.0";
+
+// Create server instance
 const server = new McpServer({
   name: "weather",
   version: "1.0.0",
 });
 
-// Register a tool
+// Helper function for API requests
+async function makeRequest<T>(url: string): Promise<T | null> {
+  const headers = {
+    "User-Agent": USER_AGENT,
+    Accept: "application/geo+json",
+  };
+
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    console.error("API request failed:", error);  // stderr is safe
+    return null;
+  }
+}
+
+// Register tools
 server.registerTool(
   "get_weather",
   {
-    description: "Get weather for a city",
+    description: "Get current weather for a location",
     inputSchema: {
-      city: z.string().describe("City name"),
+      latitude: z.number().min(-90).max(90).describe("Latitude"),
+      longitude: z.number().min(-180).max(180).describe("Longitude"),
     },
   },
-  async ({ city }) => {
-    // Fetch weather data...
+  async ({ latitude, longitude }) => {
+    const pointsUrl = `${NWS_API_BASE}/points/${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+    const data = await makeRequest<any>(pointsUrl);
+
+    if (!data?.properties?.forecast) {
+      return {
+        content: [{ type: "text", text: "Failed to get forecast" }],
+      };
+    }
+
+    const forecast = await makeRequest<any>(data.properties.forecast);
+    const period = forecast?.properties?.periods?.[0];
+
     return {
       content: [
         {
           type: "text",
-          text: `Weather for ${city}: 72°F, Sunny`,
+          text: period
+            ? `${period.name}: ${period.temperature}°${period.temperatureUnit}, ${period.shortForecast}`
+            : "No forecast available",
         },
       ],
     };
   }
 );
 
+server.registerTool(
+  "get_alerts",
+  {
+    description: "Get weather alerts for a US state",
+    inputSchema: {
+      state: z.string().length(2).describe("Two-letter state code (e.g. CA, NY)"),
+    },
+  },
+  async ({ state }) => {
+    const url = `${NWS_API_BASE}/alerts?area=${state.toUpperCase()}`;
+    const data = await makeRequest<AlertsResponse>(url);
+
+    if (!data?.features?.length) {
+      return {
+        content: [{ type: "text", text: `No active alerts for ${state}` }],
+      };
+    }
+
+    const alerts = data.features
+      .map((f) => `${f.properties.event}: ${f.properties.areaDesc}`)
+      .join("\n");
+
+    return {
+      content: [{ type: "text", text: `Alerts for ${state}:\n${alerts}` }],
+    };
+  }
+);
+
+// CRITICAL: Use stderr for logging, not stdout
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Weather MCP Server running");  // Use stderr!
+  console.error("Weather MCP Server running on stdio");
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
 ```
 
 **Build and add**:
@@ -226,25 +314,89 @@ uv add "mcp[cli]" httpx
 touch weather.py
 ```
 
-**weather.py**:
+**weather.py** (Complete Example):
 
 ```python
+from typing import Any
+import httpx
 from mcp.server.fastmcp import FastMCP
 
+# Initialize server
 mcp = FastMCP("weather")
 
+NWS_API_BASE = "https://api.weather.gov"
+USER_AGENT = "weather-mcp/1.0"
+
+
+async def make_request(url: str) -> dict[str, Any] | None:
+    """Make API request with proper error handling."""
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/geo+json"}
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers, timeout=30.0)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            # Use logging, not print (print goes to stdout!)
+            import logging
+            logging.error(f"Request failed: {e}")
+            return None
+
+
 @mcp.tool()
-async def get_weather(city: str) -> str:
-    """Get weather for a city.
+async def get_weather(latitude: float, longitude: float) -> str:
+    """Get weather forecast for a location.
 
     Args:
-        city: City name
+        latitude: Latitude of the location
+        longitude: Longitude of the location
     """
-    # Fetch weather data...
-    return f"Weather for {city}: 72°F, Sunny"
+    points_url = f"{NWS_API_BASE}/points/{latitude},{longitude}"
+    data = await make_request(points_url)
+
+    if not data:
+        return "Unable to fetch weather data."
+
+    forecast_url = data.get("properties", {}).get("forecast")
+    if not forecast_url:
+        return "Unable to get forecast URL."
+
+    forecast = await make_request(forecast_url)
+    periods = forecast.get("properties", {}).get("periods", []) if forecast else []
+
+    if not periods:
+        return "No forecast available."
+
+    p = periods[0]
+    return f"{p.get('name')}: {p.get('temperature')}°{p.get('temperatureUnit')}, {p.get('shortForecast')}"
+
+
+@mcp.tool()
+async def get_alerts(state: str) -> str:
+    """Get weather alerts for a US state.
+
+    Args:
+        state: Two-letter US state code (e.g. CA, NY)
+    """
+    url = f"{NWS_API_BASE}/alerts/active/area/{state.upper()}"
+    data = await make_request(url)
+
+    if not data or "features" not in data:
+        return "Unable to fetch alerts."
+
+    if not data["features"]:
+        return f"No active alerts for {state}."
+
+    alerts = [
+        f"{f['properties'].get('event', 'Unknown')}: {f['properties'].get('areaDesc', 'Unknown area')}"
+        for f in data["features"]
+    ]
+    return f"Alerts for {state}:\n" + "\n".join(alerts)
+
 
 def main():
     mcp.run(transport="stdio")
+
 
 if __name__ == "__main__":
     main()
@@ -326,6 +478,40 @@ Plugins can bundle MCP servers:
 
 ---
 
+## Tool Permissions
+
+Control MCP tool access in `settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__myserver__read_data",
+      "mcp__myserver__list_*"
+    ],
+    "deny": [
+      "mcp__myserver__delete_*"
+    ]
+  }
+}
+```
+
+---
+
+## Tool Search (Many MCP Tools)
+
+When MCP tools exceed 10% of context window, use Tool Search:
+
+```bash
+# Enable tool search mode
+export MCP_TOOL_SEARCH_ENABLED=true
+claude
+```
+
+Claude will search for relevant tools instead of loading all tool descriptions.
+
+---
+
 ## Best Practices
 
 ### Performance
@@ -334,6 +520,7 @@ Plugins can bundle MCP servers:
 - Set timeouts: `export MCP_TIMEOUT=10000`
 - Paginate large responses
 - Cache expensive API calls
+- Use `reset-project-choices` after config changes
 
 ### Security
 
@@ -381,15 +568,49 @@ claude mcp list
 
 ---
 
+## Debugging MCP Servers
+
+### Check Server Logs
+
+```bash
+# For Claude Desktop (macOS)
+tail -f ~/Library/Logs/Claude/mcp*.log
+
+# For Claude Code, check server stderr
+claude mcp get myserver  # Shows config
+```
+
+### Test Server Manually
+
+```bash
+# Test stdio server directly
+echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node /path/to/server.js
+
+# Test with MCP Inspector
+npx @modelcontextprotocol/inspector node /path/to/server.js
+```
+
+### Common Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `ECONNREFUSED` | Server not running | Check command path |
+| `ETIMEDOUT` | Server too slow | Increase `MCP_TIMEOUT` |
+| `Malformed JSON` | stdout pollution | Use stderr for logs |
+| `Tool not found` | Stale cache | Run `claude mcp reset-project-choices` |
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
 | Server not connecting | Check `claude mcp list`, verify URL/command |
-| Tools not appearing | Run `/mcp` to check status |
-| Permission errors | Check environment variables |
-| Timeout errors | Set `MCP_TIMEOUT` higher |
+| Tools not appearing | Run `/mcp` to check status, restart Claude |
+| Permission errors | Check environment variables with `env` |
+| Timeout errors | Set `MCP_TIMEOUT` higher (milliseconds) |
 | Output too large | Set `MAX_MCP_OUTPUT_TOKENS` |
+| Config not loading | Run `claude mcp reset-project-choices` |
 
 ---
 

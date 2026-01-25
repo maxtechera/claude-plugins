@@ -1,0 +1,12 @@
+{
+  "name": "essentials",
+  "version": "1.0.0",
+  "description": "Claude Code extension patterns - skills, agents, commands, MCP servers",
+  "author": "Max Techera",
+  "skills": [
+    "skills-guide",
+    "agents-guide",
+    "commands-guide",
+    "mcp-guide"
+  ]
+}

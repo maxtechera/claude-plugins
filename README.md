@@ -14,6 +14,7 @@ Simple, focused plugins for Claude Code.
 | `content-creator` | Viral content, copywriting, brand voice | `viral-hooks`, `viral-patterns`, `natural-writing`, `lead-magnet-copywriting`, `brand-voice`, `content-multiplication` | `/find-topic` |
 | `youtube` | Video scripting | `scripting`, `youtube-scripting` | - |
 | `mailerlite` | Email marketing, automations, API | `mailerlite-mastery` | - |
+| `essentials` | Claude Code extension patterns | `skills-guide`, `agents-guide`, `commands-guide`, `mcp-guide` | - |
 
 ## Installation
 
@@ -29,6 +30,8 @@ Simple, focused plugins for Claude Code.
 /plugin install hormozi@max-techera-plugins
 /plugin install content-creator@max-techera-plugins
 /plugin install youtube@max-techera-plugins
+/plugin install mailerlite@max-techera-plugins
+/plugin install essentials@max-techera-plugins
 ```
 
 ## Usage Examples
@@ -81,6 +84,21 @@ Simple, focused plugins for Claude Code.
 ```
 "Write a script for a video about [topic]"
 "Structure my video using the hook-intro-body-close format"
+```
+
+### MailerLite
+```
+"Create a welcome email sequence"
+"Add subscriber to MailerLite with these fields"
+"Set up a re-engagement automation"
+```
+
+### Essentials (Claude Code Patterns)
+```
+"How do I create a custom skill?"
+"Show me how to define a custom agent"
+"What's the format for slash commands?"
+"Help me set up an MCP server"
 ```
 
 ## Manual Installation

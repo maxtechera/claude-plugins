@@ -1,0 +1,11 @@
+{
+  "name": "skill-creator",
+  "description": "Create new Claude Code skills with best practices",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "development",
+  "keywords": ["skills", "plugins", "meta", "creator", "templates"]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "code-review",
+  "description": "Multi-agent PR review with confidence scoring and CLAUDE.md compliance",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "development",
+  "keywords": ["code-review", "pull-request", "agents", "quality", "bugs"]
+}

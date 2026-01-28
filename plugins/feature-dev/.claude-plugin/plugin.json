@@ -1,0 +1,11 @@
+{
+  "name": "feature-dev",
+  "description": "Structured 7-phase feature development workflow with parallel agents",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "development",
+  "keywords": ["feature", "workflow", "architecture", "planning", "agents"]
+}

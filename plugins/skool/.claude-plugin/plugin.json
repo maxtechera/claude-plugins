@@ -1,0 +1,14 @@
+{
+  "name": "skool",
+  "description": "Skool community management via Playwright MCP - sync content, add lessons, manage posts",
+  "version": "1.0.0",
+  "author": {
+    "name": "Max Techera",
+    "email": "max@maxtechera.dev"
+  },
+  "category": "content",
+  "keywords": ["skool", "community", "playwright", "sync", "content-management"],
+  "requires": {
+    "mcp": ["playwright"]
+  }
+}

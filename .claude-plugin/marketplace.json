@@ -76,6 +76,36 @@
       "category": "development",
       "tags": ["skills", "plugins", "meta", "creator", "templates"],
       "homepage": "https://github.com/maxtechera/claude-plugins/tree/main/plugins/skill-creator"
+    },
+    {
+      "name": "ship",
+      "description": "Credentials preflight and GTM pipeline for AI agents. Health-check 30+ CLIs and API tokens before you deploy.",
+      "version": "0.1.0",
+      "author": { "name": "maxtechera", "url": "https://github.com/maxtechera" },
+      "source": "https://github.com/maxtechera/ship",
+      "category": "productivity",
+      "tags": ["credentials", "preflight", "gtm", "ship", "launch", "deploy"],
+      "homepage": "https://github.com/maxtechera/ship"
+    },
+    {
+      "name": "orchestrator",
+      "description": "Skill-first orchestration framework. Dispatch agents, verify deliverables, improve with every cycle.",
+      "version": "1.0.0",
+      "author": { "name": "maxtechera", "url": "https://github.com/maxtechera" },
+      "source": "https://github.com/maxtechera/orchestrator",
+      "category": "productivity",
+      "tags": ["orchestration", "dispatch", "verification", "multi-domain", "autonomous"],
+      "homepage": "https://github.com/maxtechera/orchestrator"
+    },
+    {
+      "name": "memory",
+      "description": "Cross-platform memory system. 3-tier architecture, vault sync, session hooks, weekly consolidation.",
+      "version": "1.0.0",
+      "author": { "name": "maxtechera", "url": "https://github.com/maxtechera" },
+      "source": "https://github.com/maxtechera/memory",
+      "category": "productivity",
+      "tags": ["memory", "obsidian", "vault-sync", "cross-platform", "session-hooks"],
+      "homepage": "https://github.com/maxtechera/memory"
     }
   ]
 }

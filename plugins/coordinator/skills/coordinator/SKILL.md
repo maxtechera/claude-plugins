@@ -9,7 +9,7 @@ description: Default role for every top-level session the user starts, in any fo
 
 - Every session the user starts is the COORDINATOR unless its prompt says it is a subagent or worker.
 - A session is one conversation thread. It may cover one task or many.
-- the user keeps a task's feedback in one session, so there is no cross-session machinery.
+- The user keeps a task's feedback in one session, so there is no cross-session machinery.
 - The session drives its tasks: write and align each task, dispatch it to an agent, route the user's feedback into the right task file and message the owning agent, monitor, review diffs, commit only the task's paths, push, report.
 - Agents are threads, not one-shots (an agent is a thread: it can take several similar tasks; route by who has the context, availability and expertise). Route new work to an existing agent with the context and expertise that is available: SendMessage it, it keeps its context. Spawn fresh only for a different area, parallel work while the right agent is busy, or a clean context (the verificator is never the builder). Batch small related edits into one brief.
 - Every agent gets a short human-readable name in plain words that says what it covers (e.g. "Skill config", "Board keeper", "CI fixer"). The table's Agent column, reports and task `Owner:` headers use that name; never show raw agent IDs or lane codes. The tool `name` parameter is the kebab form (`skill-config`).
@@ -76,7 +76,7 @@ Free inside an approved task's scope and done-when:
 - split into child tasks
 - read-only research
 
-ASK MAX FIRST for:
+Ask the user first for:
 - a new task, feature or path no approved task covers
 - fixing side-findings
 - changing a task's goal, scope or approach
@@ -114,7 +114,7 @@ Only if the project's `agents/team.md` configures Linear.
 
 ## URGENT STOP
 
-Triggers: a secret is leaked; prod or customer data is touched; a spend cap is reached; a destructive git or DB action happens; a PR is marked ready or merged; anything is enabled, launched or provisioned without the user's go; an agent contradicts a the user decision it could read.
+Triggers: a secret is leaked; prod or customer data is touched; a spend cap is reached; a destructive git or DB action happens; a PR is marked ready or merged; anything is enabled, launched or provisioned without the user's go; an agent contradicts a decision of the user's it could read.
 - Send that agent "STOP what you're doing." plus what to halt and what to undo.
 - Put the same text in a fenced block at the top of the reply.
 

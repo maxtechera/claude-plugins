@@ -1,14 +1,49 @@
 import { atom, read, update } from 'claude-code'
-import type { AgentInfo, EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-import type { Task } from '../types'
-import { kebab, parseTask, stateOf, summary } from './board'
+import type { Agent, Task } from '../types'
+import {
+  age,
+  agentFor,
+  isClosed,
+  markdown,
+  mergeAgents,
+  parseTask,
+  quietMinutes,
+  sortTasks,
+  stateOf,
+  summary,
+} from './board'
 
 const PANE = 'coordinator'
 const NARROW = 144
+const SYNC_MS = 1000
+const STALE_MIN = 15
 const root = atom({ plugin: 'coordinator', key: 'root' } as const, null)
 const tasks = atom({ plugin: 'coordinator', key: 'tasks' } as const, [])
-const activity = atom({ plugin: 'coordinator', key: 'activity' } as const, {})
+const agents = atom({ plugin: 'coordinator', key: 'agents' } as const, [])
+const minute = atom({ plugin: 'coordinator', key: 'minute' } as const, 0)
+
+// Theme keys, so the board follows the person's theme.
+const STATE_COLOR: Record<string, string> = {
+  blocked: 'error',
+  review: 'warning',
+  doing: 'claude',
+  todo: 'inactive',
+  done: 'success',
+  dropped: 'inactive',
+}
+const AGENT_COLOR: Record<string, string> = {
+  running: 'claude',
+  failed: 'error',
+  killed: 'error',
+  completed: 'success',
+}
+
+// lazy: one sync at a time; a slow tick only skips the next.
+let syncing = false
+// The status line as last set, so it is written only on change.
+let lastStatus: string | undefined | null = null
 
 // The repo root: nearest ancestor of the session's directory holding .git.
 const findRoot = async ($: EngineInterface) => {
@@ -21,54 +56,82 @@ const findRoot = async ($: EngineInterface) => {
   }
 }
 
-// Reads only <root>/tasks/*.md (not later/ or done/).
-const loadTasks = async ($: EngineInterface) => {
+// Reads <root>/tasks/*.md (not later/ or done/), re-reading only files whose mtime moved.
+const syncTasks = async ($: EngineInterface) => {
   const dir = await read($, root)
-  if (!dir || !(await $.fs.exists(`${dir}/tasks`))) return []
-  const entries = await $.fs.list(`${dir}/tasks`)
-  const files = entries
-    .filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
-    .map(entry => entry.name)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  const list: Task[] = []
-  for (const file of files) {
-    const text = await $.fs.read(`${dir}/tasks/${file}`)
-    if (typeof text === 'string') list.push(parseTask(file, text))
+  const before = await read($, tasks)
+  if (!dir || !(await $.fs.exists(`${dir}/tasks`))) return before.length ? [] : before
+  const entries = (await $.fs.list(`${dir}/tasks`)).filter(
+    entry => entry.kind === 'file' && entry.name.endsWith('.md'),
+  )
+  const old = new Map(before.map(task => [task.file, task]))
+  let changed = entries.length !== before.length
+  const next: Task[] = []
+  for (const entry of entries) {
+    const prev = old.get(entry.name)
+    if (prev && prev.mtimeMs === entry.mtimeMs) {
+      next.push(prev)
+      continue
+    }
+    const text = await $.fs.read(`${dir}/tasks/${entry.name}`)
+    if (typeof text !== 'string') continue
+    next.push(parseTask(entry.name, text, entry.mtimeMs))
+    changed = true
   }
 
-  return list
+  return changed ? next : before
 }
 
-// Never throws: the hooks that call it gate tool calls and spawns.
-const refresh = async ($: EngineInterface) => {
-  const list = await loadTasks($).catch(() => [] as Task[])
-  await update($, tasks, () => list).catch(() => undefined)
-  $.ui.status(list.length ? summary(list) : undefined)
+// Never rejects. Keeps tasks, agents, the minute and the status line current.
+const sync = async ($: EngineInterface) => {
+  if (syncing) return
+  syncing = true
+  try {
+    const now = await $.clock.now()
+    const list = await syncTasks($).catch(() => null)
+    if (list && list !== (await read($, tasks))) await update($, tasks, () => list)
+    const info = await $.agent.list().catch(() => null)
+    if (info) {
+      const merged = mergeAgents(await read($, agents), info, now)
+      if (JSON.stringify(merged) !== JSON.stringify(await read($, agents)))
+        await update($, agents, cur => mergeAgents(cur, info, now))
+    }
+    const m = Math.floor(now / 60000)
+    if (m !== (await read($, minute))) await update($, minute, () => m)
+    const all = await read($, tasks)
+    const status = all.length ? summary(all, await read($, agents)) : undefined
+    if (status !== lastStatus) {
+      $.ui.status(status)
+      lastStatus = status
+    }
+  } catch {
+    // a failed tick waits for the next
+  } finally {
+    syncing = false
+  }
 }
 
-const touch = ($: EngineInterface, agentId: string, what: string) =>
-  $.clock.now().then(at => update($, activity, all => ({ ...all, [agentId]: { at, what } })))
-    .catch(() => undefined)
-
-const ago = (now: number, at: number) => {
-  const m = Math.round((now - at) / 60000)
-
-  return m < 1 ? 'now' : m < 60 ? `${m}m` : `${Math.round(m / 60)}h`
+const touch = async ($: EngineInterface, agentId: string, what: string) => {
+  const now = await $.clock.now()
+  await update($, agents, list =>
+    list.map(agent => (agent.id === agentId ? { ...agent, activeAt: now, what } : agent)),
+  )
 }
 
-const agentFor = (agents: readonly AgentInfo[], owner: string) =>
-  agents.find(agent => agent.name && kebab(agent.name) === kebab(owner))
+const cut = (text: string, n: number) => (text.length > n ? `${text.slice(0, Math.max(1, n - 1))}…` : text)
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    lastStatus = null
     await update($, root, () => null)
-    const dir = await findRoot($)
+    const dir = await findRoot($).catch(() => null)
     await update($, root, () => dir)
     await $.command.register({
       name: 'coordinator',
-      description: 'Show the task board (tasks/*.md) and live agents in a pane',
+      description: 'Show the task board (tasks/*.md) with live agents',
     })
-    await refresh($)
+    $.clock.every(SYNC_MS, () => void sync($))
+    await sync($)
 
     return next(e)
   })
@@ -77,7 +140,7 @@ export const register: Register = on => {
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
     const id = await $.session.id()
-    const list = await read($, tasks)
+    const list = sortTasks(await read($, tasks))
     const board = list.map(t => `${t.id} | ${t.title} | ${t.status} | ${t.owner}`).join('\n')
     const text = [
       `Coordinator session id: ${id} (use in task headers)`,
@@ -92,100 +155,146 @@ export const register: Register = on => {
     }
   })
 
+  // The Markdown table reaches every client (the Mac app over Remote Control draws no panes).
   on('command.run', { command: 'coordinator' }, async $ => {
-    await refresh($)
-    await $.ui.open({ id: PANE, title: 'Coordinator' })
+    await sync($)
+    await $.ui.open({ id: PANE, title: 'Coordinator' }).catch(() => undefined)
+    const now = await $.clock.now()
 
-    return { text: 'Coordinator pane opened.' }
+    return { text: markdown(await read($, tasks), await read($, agents), now) }
   })
 
+  // A spawned agent gets its row now, ahead of the next poll.
   on('agent.spawn', async ($, e, next) => {
     const spawned = await next(e)
-    if (spawned.agentId) await touch($, spawned.agentId, `spawned: ${e.description}`).catch(() => undefined)
+    const agentId = spawned.agentId
+    if (agentId) {
+      const now = await $.clock.now()
+      const row: Agent = {
+        id: agentId,
+        name: e.name ?? '',
+        description: e.description,
+        status: 'running',
+        activeAt: now,
+        what: 'spawned',
+      }
+      await update($, agents, list =>
+        list.some(a => a.id === agentId) ? list : [...list, row],
+      ).catch(() => undefined)
+    }
 
     return spawned
   })
 
   on('tool.call', async ($, e, next) => {
     if (e.agentId) await touch($, e.agentId, e.tool).catch(() => undefined)
-    const ran = await next(e)
-    if (e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'Bash') await refresh($).catch(() => undefined)
 
-    return ran
+    return next(e)
   })
 
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId) await touch($, e.agentId, `step ${e.index}`)
+    if (e.agentId) await touch($, e.agentId, 'thinking').catch(() => undefined)
 
     return yield* next(e)
   })
 
-  on('turn.complete', async ($, e, next) => {
-    const done = await next(e)
-    await refresh($)
-
-    return done
-  })
-
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
-    const list = await read($, tasks)
-    const seen = await read($, activity)
-    const agents = await $.agent.list()
+    const list = sortTasks(await read($, tasks))
+    const crew = await read($, agents)
+    await read($, minute)
     const now = await $.clock.now()
-    const width = e.props.bodyColumns
-    const cut = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
-    const lastWidth = Math.max(10, width - 52)
-    const matched = new Set<string>()
+    const width = Math.max(30, e.props.bodyColumns)
+    const room = Math.max(1, Math.floor(((e.viewport?.rows ?? 30) - 4) / 3))
+    const open = list.filter(task => !isClosed(task))
+    const closed = list.length - open.length
+    const shown = open.slice(0, room)
+    const claimed = new Set<string>()
 
-    const rows = list.map(task => {
-      const agent = agentFor(agents, task.owner)
-      if (agent) matched.add(agent.id)
-      const live = agent ? seen[agent.id] : undefined
+    const cards = shown.map(task => {
       const state = stateOf(task.status)
+      const color = STATE_COLOR[state]
+      const agent = agentFor(crew, task)
+      if (agent) claimed.add(agent.id)
+      const quiet = quietMinutes(task.lastAt, now)
+      const isStale = quiet !== null && quiet >= STALE_MIN && state !== 'todo'
+      const head = `${task.id}  ${task.title}`
 
       return (
-        <Box key={`task-${task.id}`}>
-          <Text bold>{cut(task.id, 6).padEnd(7)}</Text>
-          <Text>{cut(task.title, 22).padEnd(23)}</Text>
-          <Text color={state === 'blocked' ? 'red' : state === 'review' ? 'yellow' : undefined}>
-            {cut(task.status, 10).padEnd(11)}
-          </Text>
-          <Text dimColor>
-            {cut(task.owner, 14)}
-            {agent ? ` [${agent.status}${live ? ` ${ago(now, live.at)}` : ''}]` : ''}
-            {' '}
-            {cut(task.last, lastWidth)}
-          </Text>
+        <Box key={`task-${task.id}`} flexDirection="column" marginBottom={1}>
+          <Box>
+            <Text color={color}>{'▍'}</Text>
+            <Text bold wrap="truncate-end">
+              {cut(head, width - task.status.length - 4)}
+            </Text>
+            <Text> </Text>
+            <Text color={color}>{task.status}</Text>
+          </Box>
+          <Box>
+            <Text color={color}>{'▍'}</Text>
+            <Text dimColor>{task.owner}</Text>
+            {agent && (
+              <Text color={AGENT_COLOR[agent.status] ?? 'inactive'}>
+                {` ● ${agent.status}`}
+              </Text>
+            )}
+            {agent && agent.what !== '' && (
+              <Text dimColor>{` · ${agent.what} ${age(Math.floor((now - agent.activeAt) / 60000))}`}</Text>
+            )}
+          </Box>
+          <Box>
+            <Text color={color}>{'▍'}</Text>
+            <Text dimColor wrap="truncate-end">
+              {cut(task.last || 'no progress yet', width - 14)}
+            </Text>
+            {quiet !== null && (
+              <Text color={isStale ? 'warning' : 'inactive'}>
+                {isStale ? ` quiet ${age(quiet)}` : ` ${age(quiet)}`}
+              </Text>
+            )}
+          </Box>
         </Box>
       )
     })
 
-    const loose = agents.filter(agent => !matched.has(agent.id))
+    const loose = crew.filter(agent => !claimed.has(agent.id) && agent.status === 'running')
 
     return (
       <Box flexDirection="column">
-        <Text bold>{list.length ? summary(list) : 'No tasks/*.md in this repo.'}</Text>
-        {rows}
-        {loose.length > 0 && <Text bold>Agents</Text>}
-        {loose.map(agent => {
-          const live = seen[agent.id]
-
-          return (
-            <Box key={`agent-${agent.id}`}>
-              <Text dimColor={agent.status !== 'running'}>
-                {cut(agent.name ?? agent.description, 20).padEnd(21)}
-                {agent.status.padEnd(10)}
-                {live ? `${ago(now, live.at)} ${live.what}` : ''}
-              </Text>
-            </Box>
-          )
-        })}
+        <Box key="summary" marginBottom={1}>
+          <Text bold>{list.length ? summary(list, crew) : 'No tasks/*.md in this repo.'}</Text>
+        </Box>
+        {cards}
+        {open.length > shown.length && (
+          <Box key="more">
+            <Text dimColor>+{open.length - shown.length} more open</Text>
+          </Box>
+        )}
+        {closed > 0 && (
+          <Box key="closed">
+            <Text color="success">✓ </Text>
+            <Text dimColor>{closed} done or dropped</Text>
+          </Box>
+        )}
+        {loose.length > 0 && (
+          <Box key="loose-head" marginTop={1}>
+            <Text bold>Other agents</Text>
+          </Box>
+        )}
+        {loose.map(agent => (
+          <Box key={`agent-${agent.id}`}>
+            <Text color={AGENT_COLOR[agent.status] ?? 'inactive'}>● </Text>
+            <Text wrap="truncate-end">
+              {cut(agent.name || agent.description, 24)}
+            </Text>
+            <Text dimColor>{` ${agent.what} ${age(Math.floor((now - agent.activeAt) / 60000))}`}</Text>
+          </Box>
+        ))}
       </Box>
     )
   })
 
-  // Narrow terminals can't seat the pane unasked: show the counts above the prompt.
+  // Narrow terminals can't seat the pane unasked: one row of counts above the prompt.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, tasks)
     const active = list.filter(t => ['doing', 'review', 'blocked'].includes(stateOf(t.status)))
@@ -194,7 +303,9 @@ export const register: Register = on => {
 
     return (
       <Box key="coordinator-band">
-        <Text dimColor>Tasks: {summary(list)} · /coordinator for the board</Text>
+        <Text dimColor wrap="truncate-end">
+          Tasks: {summary(list, await read($, agents))} · /coordinator for the board
+        </Text>
       </Box>
     )
   })

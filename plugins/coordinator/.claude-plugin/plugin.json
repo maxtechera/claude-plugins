@@ -1,0 +1,6 @@
+{
+  "name": "coordinator",
+  "version": "0.1.0",
+  "description": "Coordinator role skill plus a live /coordinator pane of tasks/*.md merged with running agents, and a status-line count",
+  "types": "./types/index.d.ts"
+}

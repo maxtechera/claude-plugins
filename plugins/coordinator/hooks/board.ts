@@ -111,23 +111,44 @@ export const quietMinutes = (hhmm: string, now: number) => {
 export const age = (minutes: number) =>
   minutes < 1 ? 'now' : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h${minutes % 60 ? `${minutes % 60}m` : ''}`
 
-const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+const cell = (text: string) => text.replace(/\|/g, '/').replace(/\s+/g, ' ').trim()
+
+// The "what" field of a Progress line (`<who> | what | next | blocker`).
+export const progressWhat = (last: string) => {
+  const fields = last.split('|').map(field => field.trim())
+
+  return fields.length > 1 ? (fields[1] ?? '') : (fields[0] ?? '')
+}
+
+const fit = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
 
 export const markdown = (tasks: readonly Task[], agents: readonly Agent[], now: number) => {
-  if (tasks.length === 0) return 'No tasks/*.md in this repo.'
-  const rows = sortTasks(tasks).map(task => {
+  if (tasks.length === 0) return 'No tasks/*.md for this session.'
+  const sorted = sortTasks(tasks)
+  const open = sorted.filter(task => !isClosed(task))
+  const closed = sorted.filter(isClosed)
+  const rows = open.map(task => {
     const agent = agentFor(agents, task)
     const quiet = quietMinutes(task.lastAt, now)
     const who = agent ? `${task.owner} (${agent.status})` : task.owner
+    const stale = quiet !== null && quiet >= 15 ? `quiet ${age(quiet)}` : ''
 
-    return `| ${cell(task.id)} | ${cell(task.title)} | ${cell(task.status)} | ${cell(who)} | ${cell(task.last)} | ${quiet === null || isClosed(task) ? '' : age(quiet)} |`
+    return `| ${cell(task.id)} | ${cell(task.title)} | ${stateOf(task.status)} | ${cell(who)} | ${cell(fit(progressWhat(task.last), 60))} | ${stale} |`
   })
+  const done = (state: string) => closed.filter(task => stateOf(task.status) === state).map(task => task.id)
+  const folded = (['done', 'dropped'] as const)
+    .map(state => ({ state, ids: done(state) }))
+    .filter(({ ids }) => ids.length)
+    .map(({ state, ids }) => `${ids.length} ${state}: ${ids.join(', ')}`)
 
   return [
     `**Board:** ${summary(tasks, agents)}`,
     '',
-    '| ID | Task | Status | Owner | Last progress | Quiet |',
-    '|---|---|---|---|---|---|',
-    ...rows,
-  ].join('\n')
+    ...(rows.length
+      ? ['| ID | Task | Status | Owner | Last progress | Quiet |', '|---|---|---|---|---|---|', ...rows, '']
+      : []),
+    ...folded,
+  ]
+    .join('\n')
+    .trim()
 }

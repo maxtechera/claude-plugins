@@ -156,9 +156,12 @@ test('/coordinator answers a Markdown board for clients without panes', async ($
   const text = 'text' in ran ? String(ran.text) : ''
   expect(text).toContain('| ID | Task | Status | Owner | Last progress | Quiet |')
   expect(text.indexOf('| T3 |')).toBeLessThan(text.indexOf('| T2 |'))
-  expect(text.indexOf('| T1 |')).toBeLessThan(text.indexOf('| T4 |'))
-  expect(text).toContain('Mod builder (running)')
-  expect(text).toContain('| 20m |')
+  expect(text.startsWith('**Board:** doing 1 · review 1 · blocked 1')).toBe(true)
+  expect(text).toContain('| T3 | Wait on keys | blocked | — | asked for keys |  |')
+  expect(text).toContain('| T1 | Build pane | doing | Mod builder (running) | wrote register | quiet 20m |')
+  expect(text).not.toContain('| T4 |')
+  expect(text).toContain('1 done: T4')
+  expect(text).not.toContain('\\|')
 })
 
 test('counts sit in the footer mode labels, with no band and no pinned status', async ($, on) => {

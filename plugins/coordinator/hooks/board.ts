@@ -71,9 +71,88 @@ export const parseTask = (name: string, text: string, mtimeMs: number, dir: stri
     summary: last?.what ?? '',
     next: last?.next ?? '',
     progress: entries.slice(-KEEP),
+    repo: '',
     mtimeMs,
     file: `${dir}/${name}`,
   }
+}
+
+// A cell in plain words: the part before the first ` — ` or `;`, cut at a word to n characters.
+// Text that already reads that way comes back unchanged.
+export const short = (text: string, n = 40) => {
+  const head = (text.split(/ — |;/)[0] ?? '').trim()
+  if (head.length <= n) return head
+  const cut = head.slice(0, n - 1)
+  const space = cut.lastIndexOf(' ')
+
+  return `${(space > n / 3 ? cut.slice(0, space) : cut).replace(/[\s,.:·(-]+$/, '')}…`
+}
+
+// `owner/repo` of a git config's GitHub origin, '' for any other remote.
+export const remoteRepo = (config: string) => {
+  const url = config.match(/\[remote "origin"\][^[]*?\burl\s*=\s*(\S+)/)?.[1] ?? ''
+
+  return url.match(/github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1] ?? ''
+}
+
+export type Ref = { label: string; url: string; kind: 'pr' | 'commit' }
+
+// PR URLs, `owner/repo#N`, `#N` (the task's repo) and commit SHAs (7–40 hex, a digit and a letter; the task's repo).
+const REF =
+  /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)|(?<![\w/])([\w.-]+\/[\w.-]+)#(\d+)\b|(?<![\w/&#])#(\d+)\b|(?<![\w-])((?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40})(?![\w-])/g
+
+const refOf = (m: RegExpMatchArray, repo: string): Ref | undefined => {
+  const [, urlRepo, urlN, fullRepo, fullN, n, sha] = m
+  if (urlRepo && urlN) return { label: `${urlRepo}#${urlN}`, url: m[0], kind: 'pr' }
+  if (fullRepo && fullN) return { label: `${fullRepo}#${fullN}`, url: `https://github.com/${fullRepo}/pull/${fullN}`, kind: 'pr' }
+  if (n && repo) return { label: `#${n}`, url: `https://github.com/${repo}/pull/${n}`, kind: 'pr' }
+  if (sha && repo) return { label: sha.slice(0, 7), url: `https://github.com/${repo}/commit/${sha}`, kind: 'commit' }
+
+  return undefined
+}
+
+export const refs = (text: string, repo: string) =>
+  [...text.matchAll(REF)].flatMap(m => {
+    const ref = refOf(m, repo)
+
+    return ref ? [{ ref, at: m.index ?? 0, length: m[0].length }] : []
+  })
+
+// Text with its PRs and commits as Markdown links.
+export const linkify = (text: string, repo: string) => {
+  let out = ''
+  let from = 0
+  for (const { ref, at, length } of refs(text, repo)) {
+    out += `${text.slice(from, at)}[${ref.label}](${ref.url})`
+    from = at + length
+  }
+
+  return out + text.slice(from)
+}
+
+const PR_STATE = /\b(merged|closed|opened|open|draft|approved|ready for review|green|red)\b/i
+
+// The newest PR or commit a task's Progress (newest line first), then its status, names, with its state.
+export const artifact = (task: Task) => {
+  const lines = [...task.progress].reverse().map(entry => `${entry.what} ${entry.next}`)
+  for (const line of [...lines, task.status]) {
+    const found = refs(line, task.repo ?? '')
+    const hit = found.find(f => f.ref.kind === 'pr') ?? found[0]
+    if (!hit) continue
+    const state =
+      hit.ref.kind === 'pr' ? (line.match(PR_STATE)?.[1] ?? '').toLowerCase() : /\bpushed\b/i.test(line) ? 'pushed' : ''
+
+    return { ...hit.ref, state }
+  }
+
+  return undefined
+}
+
+// The Next cell: its short part, then the blocker.
+export const nextCell = (task: Task) => {
+  const m = task.next.match(/^(.*) \(blocked: (.*)\)$/)
+
+  return m ? `${short(m[1] ?? '')} (blocked: ${short(m[2] ?? '', 24)})`.trim() : short(task.next)
 }
 
 export const stateOf = (status: string) => status.replace(/\(.*$/, '').trim().toLowerCase()
@@ -222,8 +301,8 @@ export const lastMessage = (task: Task, agent: Agent | undefined, now: number) =
   const state = stateOf(task.status)
   const working = state.startsWith('doing') || state.startsWith('review')
   if (working && agent && isLive(agent) && agent.what)
-    return `${agent.what} ${age(Math.floor((now - agent.activeAt) / 60000))}`.slice(0, 80)
-  let msg = task.summary.slice(0, 80)
+    return `${short(agent.what)} ${age(Math.floor((now - agent.activeAt) / 60000))}`
+  let msg = short(task.summary)
   const at = minuteOfDay(task.activity)
   if (msg && at !== null && working) {
     const d = new Date(now)
@@ -246,13 +325,31 @@ const cell = (text: string) => (text || '—').replace(/\|/g, '\\|').replace(/\n
 
 export const TABLE_HEAD = '| ID | P | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |'
 
-// One row of `tasks-index.py --session`'s table.
-export const tableRow = (task: Task, agent: Agent | undefined, now: number) =>
-  `| ${[task.id, pcell(task), label(task), task.owner, coord(task), task.activity, task.summary, lastMessage(task, agent, now), task.next]
-    .map(cell)
-    .join(' | ')} |`
+// Last activity: the newest PR or commit as a link, with its state and the time; else the time.
+export const activityCell = (task: Task) => {
+  const art = artifact(task)
+  if (!art) return cell(task.activity)
 
-const fit = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
+  return `${art.kind === 'pr' ? 'PR ' : ''}[${art.label}](${art.url})${art.state ? ` ${art.state}` : ''} · ${cell(task.activity)}`
+}
+
+// One row of `tasks-index.py --session`'s table, each cell in plain words and PRs and commits as links.
+// A row whose cells are already short, with no PRs or commits, is the script's row.
+export const tableRow = (task: Task, agent: Agent | undefined, now: number) => {
+  const link = (text: string) => linkify(cell(text), task.repo ?? '')
+
+  return `| ${[
+    cell(task.id),
+    cell(pcell(task)),
+    link(short(label(task))),
+    cell(task.owner),
+    cell(coord(task)),
+    activityCell(task),
+    link(short(task.summary)),
+    link(lastMessage(task, agent, now)),
+    link(nextCell(task)),
+  ].join(' | ')} |`
+}
 
 // The /coordinator-board reply: counts, live agents, the session table (priority first, then needs-user), recent Progress.
 export const markdown = (tasks: readonly Task[], agents: readonly Agent[], sessionId: string, now: number) => {
@@ -260,12 +357,12 @@ export const markdown = (tasks: readonly Task[], agents: readonly Agent[], sessi
   const list = sortTasks(mine(tasks, sessionId))
   const crew = agents.filter(isLive).map(agent => {
     const task = taskFor(tasks, agent)
-    const what = agent.what ? `${agent.what} ${age(Math.floor((now - agent.activeAt) / 60000))}` : agent.status
+    const what = agent.what ? `${short(agent.what)} ${age(Math.floor((now - agent.activeAt) / 60000))}` : agent.status
 
-    return `- ${agent.name || agent.description} → ${task ? `${task.id} ${fit(label(task), 50)}` : '—'} · ${what}`
+    return `- ${agent.name || agent.description} → ${task ? `${task.id} ${short(label(task))}` : '—'} · ${what}`
   })
   const others = sortTasks(tasks.filter(task => !list.includes(task) && !isClosed(task)))
-  const recent = activity(list, 5).map(({ task, entry }) => `- ${entry.at} ${task.id} ${entry.who ? `${entry.who} · ` : ''}${entry.what}`)
+  const recent = activity(list, 5).map(({ task, entry }) => `- ${entry.at} ${task.id} ${entry.who ? `${entry.who} · ` : ''}${linkify(short(entry.what, 60), task.repo ?? '')}`)
 
   return [
     `**Board:** ${summary(list, agents)}`,

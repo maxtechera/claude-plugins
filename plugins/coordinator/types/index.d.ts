@@ -31,6 +31,8 @@ export type Task = {
   next: string
   /** The last few Progress lines, oldest first. */
   progress: Entry[]
+  /** `owner/repo` of the task dir's GitHub origin, '' when none; PRs and SHAs link there. */
+  repo: string
   mtimeMs: number
   /** The file's full path: the record's key across task dirs. */
   file: string

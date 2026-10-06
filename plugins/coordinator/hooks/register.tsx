@@ -6,6 +6,7 @@ import {
   activity,
   age,
   agentFor,
+  artifact,
   coord,
   COUNTED,
   counts,
@@ -16,9 +17,12 @@ import {
   markdown,
   mergeAgents,
   mine,
+  nextCell,
   NEEDS_USER,
   parseTask,
   pcell,
+  remoteRepo,
+  short,
   sortTasks,
   stateOf,
   summary,
@@ -104,6 +108,27 @@ const discover = async ($: EngineInterface, dir: string) => {
   }
 }
 
+// `owner/repo` of each repo's GitHub origin, read once per load from .git/config.
+const remotes = new Map<string, string>()
+const repoOf = async ($: EngineInterface, tasksDir: string) => {
+  const dir = await findRoot($, tasksDir.replace(/\/tasks$/, ''))
+  if (!dir) return ''
+  const known = remotes.get(dir)
+  if (known !== undefined) return known
+  let repo = ''
+  try {
+    if (await $.fs.exists(`${dir}/.git/config`)) {
+      const text = await $.fs.read(`${dir}/.git/config`)
+      if (typeof text === 'string') repo = remoteRepo(text)
+    }
+  } catch {
+    // A worktree's .git is a file, or the config is unreadable: no links.
+  }
+  remotes.set(dir, repo)
+
+  return repo
+}
+
 // Reads tasks/*.md (not later/, done/ or archive/: files only, no subdirs) of the root and of the session's dirs, re-reading only files whose mtime moved.
 const syncTasks = async ($: EngineInterface, dir: string | null) => {
   const before = await read($, tasks)
@@ -113,16 +138,17 @@ const syncTasks = async ($: EngineInterface, dir: string | null) => {
   let changed = false
   for (const tasksDir of dirs) {
     if (!(await $.fs.exists(tasksDir))) continue
+    const repo = await repoOf($, tasksDir)
     for (const entry of (await $.fs.list(tasksDir)).filter(isTaskFile)) {
       const prev = old.get(`${tasksDir}/${entry.name}`)
-      // A record from before 0.4 has no progress list: read it again.
-      if (prev && prev.mtimeMs === entry.mtimeMs && Array.isArray(prev.progress)) {
+      // A record from before 0.4 has no progress list, and one from before 0.6 no repo: read it again.
+      if (prev && prev.mtimeMs === entry.mtimeMs && Array.isArray(prev.progress) && prev.repo === repo) {
         next.push(prev)
         continue
       }
       const text = await $.fs.read(`${tasksDir}/${entry.name}`)
       if (typeof text !== 'string') continue
-      next.push(parseTask(entry.name, text, entry.mtimeMs, tasksDir))
+      next.push({ ...parseTask(entry.name, text, entry.mtimeMs, tasksDir), repo })
       changed = true
     }
   }
@@ -265,7 +291,7 @@ export const register: Register = on => {
 
   // Header, agent cards, the session's task table (as `tasks-index.py --session` prints it), done, activity; fitted to the body's rows.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Link } = $.ui.resolve(e)
     const all = await read($, tasks)
     const crew = await read($, agents)
     await read($, minute)
@@ -293,9 +319,11 @@ export const register: Register = on => {
     rest -= doneRows
     const recent = rest >= 3 ? activity(list, Math.min(8, rest - 2)) : []
 
-    // Columns: marker 2, ID 5, P (`P1 · H/S` wide, `P1` narrow), status 8, agent 15, coordinator 9, last activity 6; the rest is shared.
+    // Columns: marker 2, ID 5, P (`P1 · H/S` wide, `P1` narrow), status 8, agent 15, coordinator 9, last activity
+    // (`PR #4 merged` when wide and a row names a PR or commit, else the time); the rest is shared.
     const pW = wide ? 9 : 3
-    const flex = Math.max(10, width - 45 - pW)
+    const lastW = wide && open.some(task => artifact(task)) ? 18 : 6
+    const flex = Math.max(10, width - 39 - pW - lastW)
     const taskW = wide ? Math.floor(flex * 0.3) : flex
     const sumW = wide ? Math.floor(flex * 0.25) : 0
     const msgW = wide ? Math.floor(flex * 0.25) : 0
@@ -334,7 +362,7 @@ export const register: Register = on => {
             </Box>,
             <Box key={`agent-${agent.id}-task`}>
               <Text dimColor wrap="truncate-end">
-                {cut(`  ${task ? label(task) : agent.description}${task?.summary ? ` — ${task.summary}` : ''}`, width)}
+                {cut(`  ${task ? short(label(task)) : agent.description}${task?.summary ? ` — ${short(task.summary)}` : ''}`, width)}
               </Text>
             </Box>,
           ]
@@ -343,7 +371,7 @@ export const register: Register = on => {
         {list.length > 0 && (
           <Box key="head">
             <Text dimColor bold wrap="truncate-end">
-              {`  ${pad('ID', 5)}${pad('P', pW)}${pad('Status', 8)}${pad('Task', taskW)}${pad('Agent', 15)}${pad('Coord', 9)}${pad('Last', 6)}${
+              {`  ${pad('ID', 5)}${pad('P', pW)}${pad('Status', 8)}${pad('Task', taskW)}${pad('Agent', 15)}${pad('Coord', 9)}${pad('Last', lastW)}${
                 wide ? `${pad('Summary', sumW)}${pad('Last message', msgW)}${pad('Next', nextW)}` : ''
               }`}
             </Text>
@@ -355,8 +383,14 @@ export const register: Register = on => {
           const agent = agentFor(crew, all, task)
           const msg = lastMessage(task, agent, now)
           // The narrow row's second line: summary, what Last message adds to it, next.
-          const extra = msg.endsWith(task.summary) ? msg.slice(0, msg.length - task.summary.length).replace(/ · $/, '') : msg
-          const line2 = `${task.summary || '—'}${extra ? ` · ${extra}` : ''}${task.next && task.next !== '—' ? ` → ${task.next}` : ''}`
+          const sum = short(task.summary)
+          const next = nextCell(task)
+          const art = artifact(task)
+          const extra = msg.endsWith(sum) ? msg.slice(0, msg.length - sum.length).replace(/ · $/, '') : msg
+          const line2 = `${sum || '—'}${extra ? ` · ${extra}` : ''}${next && next !== '—' ? ` → ${next}` : ''}`
+          const lastColor = msg.startsWith('quiet') ? 'warning' : 'inactive'
+          const artText = art ? `${art.kind === 'pr' ? 'PR ' : ''}` : ''
+          const artLabel = art ? cut(art.label, Math.max(4, lastW - 2 - artText.length - (art.state ? art.state.length + 1 : 0))) : ''
           const rows = [
             <Box key={`task-${task.id}`}>
               <Text color={color}>{'▍ '}</Text>
@@ -365,26 +399,37 @@ export const register: Register = on => {
                 {pad(wide ? pcell(task) : task.priority ? prioOf(task) : '—', pW)}
               </Text>
               <Text color={color}>{pad(state, 8)}</Text>
-              <Text wrap="truncate-end">{pad(label(task), taskW)}</Text>
+              <Text wrap="truncate-end">{pad(short(label(task)), taskW)}</Text>
               <Text color={agent && isLive(agent) ? 'claude' : undefined} dimColor={!agent || !isLive(agent)}>
                 {pad(`${agent && isLive(agent) ? '● ' : ''}${task.owner || '—'}`, 15)}
               </Text>
               <Text dimColor>{pad(coord(task), 9)}</Text>
-              <Text color={msg.startsWith('quiet') ? 'warning' : 'inactive'}>{pad(task.activity, 6)}</Text>
-              {wide && <Text wrap="truncate-end">{pad(task.summary || '—', sumW)}</Text>}
+              {lastW > 6 && art ? (
+                <Text color={lastColor} wrap="truncate-end">
+                  {artText}
+                  <Link key={`link-${task.id}`} href={art.url} label={artLabel} />
+                  {pad(art.state ? ` ${art.state}` : ' ', Math.max(2, lastW - artText.length - artLabel.length))}
+                </Text>
+              ) : (
+                <Text color={lastColor}>{pad(task.activity, lastW)}</Text>
+              )}
+              {wide && <Text wrap="truncate-end">{pad(sum || '—', sumW)}</Text>}
               {wide && (
                 <Text dimColor wrap="truncate-end">
                   {pad(msg || '—', msgW)}
                 </Text>
               )}
-              {wide && <Text wrap="truncate-end">{pad(task.next || '—', nextW)}</Text>}
+              {wide && <Text wrap="truncate-end">{pad(next || '—', nextW)}</Text>}
             </Box>,
           ]
           if (detail)
             rows.push(
               <Box key={`task-${task.id}-detail`}>
                 <Text dimColor wrap="truncate-end">
-                  {`       ${cut(line2, width - 8)}`}
+                  {'       '}
+                  {art && <Link key={`link-${task.id}`} href={art.url} label={`${artText}${art.label}`} />}
+                  {art ? ` ${art.state ? `${art.state} · ` : ''}` : ''}
+                  {cut(line2, width - 8 - (art ? artText.length + art.label.length + art.state.length + 4 : 0))}
                 </Text>
               </Box>,
             )
@@ -398,7 +443,7 @@ export const register: Register = on => {
                 <Text color={stateOf(task.status) === 'done' ? 'success' : 'inactive'}>{'✓ '}</Text>
                 <Text dimColor>{pad(task.id, 5)}</Text>
                 <Text dimColor wrap="truncate-end">
-                  {cut(`${label(task)}${task.summary ? ` — ${task.summary}` : ''}`, width - 14)}
+                  {cut(`${short(label(task))}${task.summary ? ` — ${short(task.summary)}` : ''}`, width - 14)}
                 </Text>
                 <Text dimColor>{` ${task.activity}`}</Text>
               </Box>

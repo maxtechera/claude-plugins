@@ -1,7 +1,7 @@
 import type { AgentInfo, On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { sortTasks } from './board'
+import { linkify, remoteRepo, short, sortTasks } from './board'
 import type { Task } from '../types'
 
 // 2026-10-06 13:20 local: Progress lines at 13:00 are 20m quiet.
@@ -299,4 +299,79 @@ test('counts sit in the footer mode labels, with no band and no pinned status', 
   expect(await band.find({ key: 'engine' })).toBeDefined()
   await band.unmount()
   expect(fx.pinned.every(text => text === undefined)).toBe(true)
+})
+
+test('short leaves plain-word cells alone and cuts old-style lines at the dash, semicolon or a word', () => {
+  for (const text of ['wrote register', 'In main', 'CI red since 20:48 UTC', 'paste keys', ''])
+    expect(short(text)).toBe(text)
+  expect(short('In main — merged a1b2c3d, 12/12 tests')).toBe('In main')
+  expect(short('verified 5/5 tests, validate ok; rebased on origin, pushed bcc4f94')).toBe('verified 5/5 tests, validate ok')
+  const cut = short('board parses Priority/Impact/Effort headers and draws the P column everywhere it is shown')
+  expect(cut).toBe('board parses Priority/Impact/Effort…')
+  expect(cut.length).toBeLessThanOrEqual(40)
+})
+
+test('remotes and references become GitHub links', () => {
+  expect(remoteRepo('[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:maxtechera/claude-plugins.git\n')).toBe('maxtechera/claude-plugins')
+  expect(remoteRepo('[remote "origin"]\n\turl = https://github.com/last-rev-llc/if-marketing\n')).toBe('last-rev-llc/if-marketing')
+  expect(remoteRepo('[remote "origin"]\n\turl = git@gitlab.com:a/b.git\n')).toBe('')
+  const repo = 'o/r'
+  expect(linkify('PR last-rev-llc/if-marketing#4 merged', repo)).toBe('PR [last-rev-llc/if-marketing#4](https://github.com/last-rev-llc/if-marketing/pull/4) merged')
+  expect(linkify('opened #12', repo)).toBe('opened [#12](https://github.com/o/r/pull/12)')
+  expect(linkify('see https://github.com/a/b/pull/3', repo)).toBe('see [a/b#3](https://github.com/a/b/pull/3)')
+  expect(linkify('pushed 80c90e8', repo)).toBe('pushed [80c90e8](https://github.com/o/r/commit/80c90e8)')
+  // No repo: bare #N and SHAs stay text; words of hex letters and session ids are never SHAs.
+  expect(linkify('opened #12, pushed 80c90e8', '')).toBe('opened #12, pushed 80c90e8')
+  expect(linkify('defaced cafebabe f52310eb-451a', repo)).toBe('defaced cafebabe f52310eb-451a')
+})
+
+const STYLE_FILES: Files = {
+  '/repo/.git/config': { text: '[remote "origin"]\n\turl = git@github.com:acme/site.git\n', mtimeMs: 1 },
+  '/repo/tasks/T1.md': {
+    text: task('T1', 'Preview work', 'done(9f8e7d6)', 'Mod builder', '23:00 Mod builder | PR #4 merged — In main, 12/12 tests | — | none\n23:10 Mod builder | In main | You check the preview | none\n'),
+    mtimeMs: 1,
+  },
+  '/repo/tasks/T2.md': {
+    text: task('T2', 'Old style', 'doing', 'Reader', '23:30 Reader | verified 5/5 tests, validate ok; rebased on origin (delisted ship/orchestrator/memory per Max), pushed bcc4f94 | coordinator verifies, then pushes to origin and tells Max to check the pane on the Mac | none\n'),
+    mtimeMs: 1,
+  },
+  '/repo/tasks/T3.md': {
+    text: task('T3', 'Fix CI', 'review', 'Diego', '23:40 Diego | CI red since 20:48 UTC — run 123 | Diego greens it and merges | none\n'),
+    mtimeMs: 1,
+  },
+}
+
+test('/coordinator-board: plain-word cells, PRs and commits as links, newest artifact in Last activity', async ($, on) => {
+  const fx = fixture()
+  fx.files = { ...STYLE_FILES }
+  fx.roster = []
+  engine(on, fx)
+  await start($)
+  const text = await board($)
+  expect(text).toContain(
+    '| T1 | — | Preview work | Mod builder | sess-1 | PR [#4](https://github.com/acme/site/pull/4) merged · 23:10 | In main | In main | You check the preview |',
+  )
+  expect(text).toContain(
+    '| T2 | — | Old style | Reader | sess-1 | [bcc4f94](https://github.com/acme/site/commit/bcc4f94) pushed · 23:30 | verified 5/5 tests, validate ok | verified 5/5 tests, validate ok | coordinator verifies, then pushes to… |',
+  )
+  expect(text).toContain('| T3 | — | Fix CI | Diego | sess-1 | 23:40 | CI red since 20:48 UTC | CI red since 20:48 UTC | Diego greens it and merges |')
+})
+
+test('pane: the newest PR or commit is a pressable link, in Last activity when wide and on the detail line when narrow', async ($, on) => {
+  const fx = fixture()
+  fx.files = { ...STYLE_FILES }
+  fx.roster = []
+  engine(on, fx)
+  await start($)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...pane(120), surface })
+    const links = await ui.findAll({ type: 'Link' })
+    expect(links.map(link => link.props.href)).toEqual(['https://github.com/acme/site/commit/bcc4f94'])
+    expect(await ui.find({ key: 'task-T2', text: /Old style.*sess-1 +bcc4f94 pushed +verified 5/ })).toBeDefined()
+    await ui.unmount()
+  }
+  const narrow = await $.ui.mount({ ...pane(70), surface: 'terminal' })
+  expect((await narrow.findAll({ type: 'Link' })).map(link => link.props.href)).toEqual(['https://github.com/acme/site/commit/bcc4f94'])
+  expect(await narrow.find({ key: 'task-T2-detail', text: /bcc4f94 pushed · verified 5\/5 tests, validate ok/ })).toBeDefined()
+  await narrow.unmount()
 })

@@ -49,6 +49,7 @@ An editable example: replace the models and roles with your own, or put the tabl
 - Plan gate: an approved task is not yet started. A planner (Sonnet subagent or the task's lead) writes `## Plan` (steps, files, risks, cost/spend, anything irreversible such as migrations, holds, live writes, and Verify) and the status goes to `plan`. The coordinator shows the user a short summary. Only after the user approves does it move to `doing`; log "plan approved by the user HH:MM" in Progress. Exception: pure read-only diagnosis may run without a plan and produces findings only.
 - Fast check = offline or recorded check run before any live run. Required for quality tasks.
 - Progress is append-only. Line format: `HH:MM <who> | what | next | blocker`.
+- Write "what" and "next" for the user: at most 8 plain words, an outcome ("In main", "CI red since 20:48"), no paths, SHAs or test counts. Evidence goes after a ` — `, or on its own line. Name PRs as `owner/repo#N` or `#N` so the board links them. "next" names who acts: "You send the draft", "<agent> greens CI and merges".
 - Claude subagents append a Progress line at every meaningful step (it is their 'last message' in the table); Codex agents' last message is read from their tmux pane.
 
 States:

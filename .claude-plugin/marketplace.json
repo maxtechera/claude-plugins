@@ -6,5 +6,12 @@
     "name": "Max Techera",
     "email": "max@maxtechera.dev"
   },
-  "plugins": []
+  "plugins": [
+    {
+      "name": "coordinator",
+      "description": "Coordinator role skill plus a live /coordinator pane of tasks/*.md merged with running agents, and a status-line count",
+      "version": "0.1.0",
+      "source": "./plugins/coordinator"
+    }
+  ]
 }

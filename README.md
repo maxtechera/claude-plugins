@@ -4,7 +4,12 @@ Simple, focused plugins for Claude Code.
 
 ## Plugins
 
-No plugins are currently active in this marketplace.
+- **coordinator** — Coordinator role skill plus a live `/coordinator` pane of `tasks/*.md` merged with running agents, and a status-line count.
+
+```bash
+/plugin marketplace add /home/max/dev/claude-plugins
+/plugin install coordinator@max-techera-plugins
+```
 
 ## Archived
 

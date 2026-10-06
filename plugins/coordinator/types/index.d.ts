@@ -1,3 +1,14 @@
+/** One Progress line, `HH:MM <who> | what | next | blocker`. */
+export type Entry = {
+  /** `HH:MM`, or '' when the line has none. */
+  at: string
+  who: string
+  what: string
+  /** The next step, with ` (blocked: <blocker>)` when the line names one. */
+  next: string
+}
+
+/** A task file, read as tasks-index.py reads it. */
 export type Task = {
   id: string
   title: string
@@ -6,9 +17,14 @@ export type Task = {
   status: string
   owner: string
   session: string
-  last: string
-  /** `HH:MM` of the last Progress line, when it has one. */
-  lastAt: string
+  /** The last Progress line's `HH:MM`, else the file's `MM-DD`. */
+  activity: string
+  /** The last Progress line's "what". */
+  summary: string
+  /** The last Progress line's next step, with its blocker. */
+  next: string
+  /** The last few Progress lines, oldest first. */
+  progress: Entry[]
   mtimeMs: number
   /** The file's full path: the record's key across task dirs. */
   file: string
@@ -21,7 +37,13 @@ export type Agent = {
   status: string
   /** Epoch ms of the last tool call, step or spawn seen in its loop. */
   activeAt: number
+  /** Epoch ms it was spawned, or first seen when it predates the mod's load. */
+  spawnedAt: number
   what: string
+  /** The model of its last step, '' until one is seen. */
+  model: string
+  /** Context tokens of its last step (input plus cache), 0 until one is seen. */
+  context: number
 }
 
 declare module 'claude-code' {

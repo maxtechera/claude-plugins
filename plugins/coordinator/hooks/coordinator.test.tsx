@@ -13,23 +13,23 @@ type Files = Record<string, { text: string; mtimeMs: number }>
 // Task files and `tasks-index.py --session sess-1` over them, captured from the script itself (its quiet prefix
 // depends on the wall clock, so the open tasks' last lines sit late in the day, where it never fires).
 const GOLDEN_FILES: Record<string, string> = {
-  "T1.md": "# T1 — Build pane\n\nStatus: doing\nOwner: Mod builder\nSession: sess-1\n\n## Progress\n<!-- log -->\n- 23:50 Mod builder | wrote register | test it | none\n",
-  "T2.md": "# T2 – Read prior art\nAbout: Learn from earlier mods\n\nStatus: review\nOwner: Reader\nSession: sess-1\n\n## Goal\nStatus: done\n\n## Progress\n23:40 Reader | findings written | coordinator reviews | -\n",
-  "T3.md": "# T3 - Wait on keys\n\nStatus: blocked(user)\nOwner: —\nSession: sess-1\n\n## Progress\n13:15 Coordinator | asked for keys | paste keys | user | extra\n",
+  "T1.md": "# T1 — Build pane\n\nStatus: doing\nOwner: Mod builder\nSession: sess-1\nPriority: P2\nImpact: High\nEffort: M\n\n## Progress\n<!-- log -->\n- 23:50 Mod builder | wrote register | test it | none\n",
+  "T2.md": "# T2 – Read prior art\nAbout: Learn from earlier mods\n\nStatus: review\nOwner: Reader\nSession: sess-1\nPriority: P2\nImpact: Low\nEffort: S\n\n## Goal\nStatus: done\n\n## Progress\n23:40 Reader | findings written | coordinator reviews | -\n",
+  "T3.md": "# T3 - Wait on keys\n\nStatus: blocked(user)\nOwner: —\nSession: sess-1\nPriority: P3\n\n## Progress\n13:15 Coordinator | asked for keys | paste keys | user | extra\n",
   "T4.md": "# T4 — Old work\n\nStatus: done(abc123)\nOwner: Reader\nSession: sess-1\n\n## Progress\n11:00 Reader | shipped a|b split | — | none\n",
-  "T5.md": "# T5 — Gate the plan\nAbout: Ship the plan gate\n\nStatus: plan\nOwner: Planner\nSession: sess-1\n\n## Progress\n13:05 Planner | plan written\n",
+  "T5.md": "# T5 — Gate the plan\nAbout: Ship the plan gate\n\nStatus: plan\nOwner: Planner\nSession: sess-1\nPriority: P1\nImpact: High\nEffort: S\n\n## Progress\n13:05 Planner | plan written\n",
   "X1.md": "# X1 — Not ours\n\nStatus: doing\nOwner: Someone\nSession: other-session-id\n\n## Progress\n10:00 Someone | busy | more | none\n",
   "_draft.md": "# D — draft\n\nStatus: doing\nSession: sess-1\n",
   "archive/Z1.md": "# Z1 — Archived\n\nStatus: doing\nSession: sess-1\n"
 }
 const GOLDEN_TABLE = [
-  "| ID | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |",
-  "|---|---|---|---|---|---|---|---|",
-  "| T1 | Build pane | Mod builder | sess-1 | 23:50 | wrote register | wrote register | test it |",
-  "| T2 | Learn from earlier mods | Reader | sess-1 | 23:40 | findings written | findings written | coordinator reviews |",
-  "| T3 | Wait on keys | — | sess-1 | 13:15 | asked for keys | asked for keys | paste keys (blocked: user) |",
-  "| T4 | Old work | Reader | sess-1 | 11:00 | shipped a | shipped a | b split |",
-  "| T5 | Ship the plan gate | Planner | sess-1 | 13:05 | plan written | plan written | — |"
+  "| ID | P | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |",
+  "|---|---|---|---|---|---|---|---|---|",
+  "| T5 | P1 · H/S | Ship the plan gate | Planner | sess-1 | 13:05 | plan written | plan written | — |",
+  "| T1 | P2 · H/M | Build pane | Mod builder | sess-1 | 23:50 | wrote register | wrote register | test it |",
+  "| T2 | P2 · L/S | Learn from earlier mods | Reader | sess-1 | 23:40 | findings written | findings written | coordinator reviews |",
+  "| T3 | P3 · ?/? | Wait on keys | — | sess-1 | 13:15 | asked for keys | asked for keys | paste keys (blocked: user) |",
+  "| T4 | — | Old work | Reader | sess-1 | 11:00 | shipped a | shipped a | b split |"
 ]
 
 const task = (id: string, title: string, status: string, owner: string, progress = '', session = SESSION, about = '') =>
@@ -139,7 +139,7 @@ const keys = async (ui: { findAll: (q: { type: string }) => Promise<readonly { k
   (await ui.findAll({ type: 'Box' })).map(b => b.key ?? '').filter(k => prefix.test(k))
 
 const board = async ($: { command: { run: (e: never) => Promise<unknown> } }) => {
-  const ran = (await $.command.run({ command: 'coordinator', args: '' } as never)) as { text?: unknown }
+  const ran = (await $.command.run({ command: 'coordinator-board', args: '' } as never)) as { text?: unknown }
 
   return String(ran.text ?? '')
 }
@@ -150,17 +150,22 @@ test('sort puts blocked, then plan and review, doing, todo first and done last',
   expect(order.map(x => x.id)).toEqual(['T5', 'T4', 'T6', 'T3', 'T2', 'T1'])
 })
 
-test('/coordinator prints the same table rows as tasks-index.py --session', async ($, on) => {
+test('sort puts priority, then impact, ahead of status', () => {
+  const t = (id: string, status: string, priority = '', impact = '') => ({ id, status, priority, impact }) as Task
+  const order = sortTasks([t('T1', 'blocked(me)'), t('T2', 'doing', 'P2', 'Low'), t('T3', 'todo', 'P2', 'High'), t('T4', 'done(x)', 'P1'), t('T5', 'review', 'p3')])
+  expect(order.map(x => x.id)).toEqual(['T4', 'T3', 'T2', 'T5', 'T1'])
+})
+
+test('/coordinator-board prints the same table rows as tasks-index.py --session', async ($, on) => {
   const fx = fixture()
   fx.files = Object.fromEntries(Object.entries(GOLDEN_FILES).map(([name, text]) => [`/repo/tasks/${name}`, { text, mtimeMs: 1 }]))
   fx.roster = []
   engine(on, fx)
   await start($)
   const text = await board($)
-  for (const row of GOLDEN_TABLE) expect(text).toContain(row)
-  // Needs-user first, done last; other sessions' open work on one line; _drafts and archive/ never read.
-  expect(text.indexOf('| T3 |')).toBeLessThan(text.indexOf('| T5 |'))
-  expect(text.indexOf('| T1 |')).toBeLessThan(text.indexOf('| T4 |'))
+  // The script's rows in the script's order: priority, then impact. Other sessions' open work on one line;
+  // _drafts and archive/ never read.
+  expect(text).toContain(GOLDEN_TABLE.join('\n'))
   expect(text.startsWith('**Board:** doing 1 · review 1 · blocked 1 · plan 1')).toBe(true)
   expect(text).toContain('Other sessions: X1 (doing, other-se)')
   expect(text).not.toContain('| X1 |')
@@ -192,13 +197,15 @@ test('pane at 70 columns: header, agent cards, two-line task rows, done row, act
 
 test('pane at 120 columns: one line per task with every table column', async ($, on) => {
   const fx = fixture()
+  const t1 = fx.files['/repo/tasks/T1.md']!
+  t1.text = t1.text.replace('Session: sess-1\n', 'Session: sess-1\nPriority: P1\nImpact: High\nEffort: S\n')
   engine(on, fx)
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...pane(120), surface })
-    expect(await ui.find({ key: 'head', text: /ID.*Status.*Task.*Agent.*Coord.*Last.*Summary.*Last message.*Next/ })).toBeDefined()
-    expect(await keys(ui, /^task-/)).toEqual(['task-T3', 'task-T2', 'task-T1'])
-    expect(await ui.find({ key: 'task-T1', text: /Build pane.*Mod builder.*sess-1.*13:00.*wrote register.*quiet 20m.*test/ })).toBeDefined()
+    expect(await ui.find({ key: 'head', text: /ID.*P.*Status.*Task.*Agent.*Coord.*Last.*Summary.*Last message.*Next/ })).toBeDefined()
+    expect(await keys(ui, /^task-/)).toEqual(['task-T1', 'task-T3', 'task-T2'])
+    expect(await ui.find({ key: 'task-T1', text: /T1.*P1 · H\/S.*Build pane.*Mod builder.*sess-1.*13:00.*wrote register.*quiet 20m.*test/ })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -232,12 +239,12 @@ test('an agent whose brief names a done task follows its open task', async ($, o
   await ui.unmount()
 })
 
-test('a refused /coordinator is logged and the board still goes live', async ($, on) => {
+test('a refused /coordinator-board is logged and the board still goes live', async ($, on) => {
   const fx = fixture()
-  fx.refuse = '"/coordinator" refused: it is the user\'s /coordinator'
+  fx.refuse = '"/coordinator-board" refused: it is the user\'s /coordinator-board'
   const clock = engine(on, fx)
   await start($)
-  expect(fx.logs.some(line => line.includes('/coordinator not registered') && line.includes('refused'))).toBe(true)
+  expect(fx.logs.some(line => line.includes('/coordinator-board not registered') && line.includes('refused'))).toBe(true)
   const ui = await $.ui.mount({ ...pane(70), surface: 'terminal' })
   expect(await ui.find({ key: 'summary', text: /review 1.*doing 1/ })).toBeDefined()
   fx.files['/repo/tasks/T1.md'] = { text: task('T1', 'Build pane', 'review', 'Mod builder', '13:20 Mod builder | tests green | review | none\n'), mtimeMs: 2 }

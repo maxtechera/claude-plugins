@@ -3,7 +3,7 @@ import type { AgentInfo } from 'claude-code'
 import type { Agent, Entry, Task } from '../types'
 
 // Parsing follows skills/coordinator/tasks-index.py line for line, so the pane and the reply table agree.
-const FIELDS = ['status', 'owner', 'session', 'linear', 'about'] as const
+const FIELDS = ['status', 'owner', 'session', 'linear', 'about', 'priority', 'impact', 'effort'] as const
 // Progress lines kept per task for the activity list.
 const KEEP = 8
 
@@ -64,6 +64,9 @@ export const parseTask = (name: string, text: string, mtimeMs: number, dir: stri
     status: head.status ?? '',
     owner: head.owner ?? '',
     session: head.session ?? '',
+    priority: head.priority ?? '',
+    impact: head.impact ?? '',
+    effort: head.effort ?? '',
     activity: last?.at || `${pad2(at.getMonth() + 1)}-${pad2(at.getDate())}`,
     summary: last?.what ?? '',
     next: last?.next ?? '',
@@ -80,10 +83,28 @@ const RANK: Record<string, number> = { blocked: 0, plan: 1, review: 1, doing: 2,
 export const rank = (task: Task) => RANK[stateOf(task.status)] ?? 4
 export const isClosed = (task: Task) => rank(task) >= 5
 
+// tasks-index.py's sort key: P1 first and no priority last, then High, Med, Low impact.
+const prio = (task: Task) => Number((task.priority ?? '').trim().toUpperCase().match(/^P(\d)/)?.[1] ?? 9)
+const IMPACT: Record<string, number> = { h: 0, m: 1, l: 2 }
+const impact = (task: Task) => IMPACT[(task.impact ?? '').trim().toLowerCase().slice(0, 1)] ?? 3
+
+// Priority, then impact, as tasks-index.py; within those, needs-user first and done last.
 export const sortTasks = (tasks: readonly Task[]) =>
   [...tasks].sort(
-    (a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id, undefined, { numeric: true }),
+    (a, b) =>
+      prio(a) - prio(b) ||
+      impact(a) - impact(b) ||
+      rank(a) - rank(b) ||
+      a.id.localeCompare(b.id, undefined, { numeric: true }),
   )
+
+// tasks-index.py's P cell: `P1 · H/S`, or — when the task has no priority.
+export const pcell = (task: Task) => {
+  const p = (task.priority ?? '').trim().toUpperCase()
+  const first = (text: string | undefined) => (text || '?').slice(0, 1).toUpperCase()
+
+  return p ? `${p} · ${first(task.impact)}/${first(task.effort)}` : '—'
+}
 
 // This session's tasks, as `tasks-index.py --session` picks them; every task when none names it.
 export const mine = (tasks: readonly Task[], sessionId: string) => {
@@ -223,17 +244,17 @@ export const activity = (tasks: readonly Task[], n: number) =>
 
 const cell = (text: string) => (text || '—').replace(/\|/g, '\\|').replace(/\n/g, ' ')
 
-export const TABLE_HEAD = '| ID | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |'
+export const TABLE_HEAD = '| ID | P | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |'
 
 // One row of `tasks-index.py --session`'s table.
 export const tableRow = (task: Task, agent: Agent | undefined, now: number) =>
-  `| ${[task.id, label(task), task.owner, coord(task), task.activity, task.summary, lastMessage(task, agent, now), task.next]
+  `| ${[task.id, pcell(task), label(task), task.owner, coord(task), task.activity, task.summary, lastMessage(task, agent, now), task.next]
     .map(cell)
     .join(' | ')} |`
 
 const fit = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
 
-// The /coordinator reply: counts, live agents, the session table (needs-user first, done last), recent Progress.
+// The /coordinator-board reply: counts, live agents, the session table (priority first, then needs-user), recent Progress.
 export const markdown = (tasks: readonly Task[], agents: readonly Agent[], sessionId: string, now: number) => {
   if (tasks.length === 0) return 'No tasks/*.md for this session.'
   const list = sortTasks(mine(tasks, sessionId))
@@ -251,7 +272,7 @@ export const markdown = (tasks: readonly Task[], agents: readonly Agent[], sessi
     '',
     ...(crew.length ? [...crew, ''] : []),
     TABLE_HEAD,
-    '|---|---|---|---|---|---|---|---|',
+    '|---|---|---|---|---|---|---|---|---|',
     ...list.map(task => tableRow(task, agentFor(agents, tasks, task), now)),
     ...(recent.length ? ['', '**Recent:**', ...recent] : []),
     ...(others.length ? ['', `Other sessions: ${others.map(t => `${t.id} (${stateOf(t.status)}, ${coord(t)})`).join(', ')}`] : []),

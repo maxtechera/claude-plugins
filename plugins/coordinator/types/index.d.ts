@@ -17,6 +17,12 @@ export type Task = {
   status: string
   owner: string
   session: string
+  /** `P1`–`P3`; '' when the task has none. */
+  priority: string
+  /** `High`, `Med` or `Low`; ''. */
+  impact: string
+  /** `S`, `M` or `L`; ''. */
+  effort: string
   /** The last Progress line's `HH:MM`, else the file's `MM-DD`. */
   activity: string
   /** The last Progress line's "what". */

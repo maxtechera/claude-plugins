@@ -1,6 +1,9 @@
 # <ID> — <short title>
 
 About: <one plain sentence, ≤12 words, no IDs/jargon/file names: what this gets done for the user>
+Priority: <P1|P2|P3>
+Impact: <High|Med|Low>
+Effort: <S|M|L>
 Status: todo
 Owner: <agent, e.g. sonnet-1 / luna / sol-lead / opus>
 Session: <session id from session-start hook>

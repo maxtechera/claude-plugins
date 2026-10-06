@@ -18,6 +18,7 @@ import {
   mine,
   NEEDS_USER,
   parseTask,
+  pcell,
   sortTasks,
   stateOf,
   summary,
@@ -26,6 +27,8 @@ import {
 } from './board'
 
 const PANE = 'coordinator'
+// The board command; the bare /coordinator belongs to the plugin's own skill.
+const COMMAND = 'coordinator-board'
 const SYNC_MS = 1000
 const DISCOVER_MS = 30_000
 const root = atom({ plugin: 'coordinator', key: 'root' } as const, null)
@@ -162,6 +165,7 @@ const touch = async ($: EngineInterface, agentId: string, what: string) => {
   )
 }
 
+const prioOf = (task: Task) => (task.priority ?? '').trim().toUpperCase()
 const cut = (text: string, n: number) => (text.length > n ? `${text.slice(0, Math.max(1, n - 1))}…` : text)
 
 export const register: Register = on => {
@@ -170,16 +174,16 @@ export const register: Register = on => {
     discoveredAt = -Infinity
     // 0.1/0.2 pinned the counts with $.ui.status, which draws a warning glyph; the footer label replaces it.
     $.ui.status(undefined)
-    // Liveness first: a refused /coordinator (another skill or command owns the name) must not stop the board.
+    // Liveness first: a refused /coordinator-board (another skill or command owns the name) must not stop the board.
     $.clock.every(SYNC_MS, () => void sync($))
     await sync($)
     try {
       await $.command.register({
-        name: 'coordinator',
-        description: 'Show the task board (tasks/*.md) with live agents',
+        name: COMMAND,
+        description: 'Open the coordinator pane and print the task board (tasks/*.md) with live agents',
       })
     } catch (err) {
-      $.ui.log(`coordinator: /coordinator not registered (${err instanceof Error ? err.message : String(err)}); the pane and footer still run`)
+      $.ui.log(`coordinator: /${COMMAND} not registered (${err instanceof Error ? err.message : String(err)}); the pane and footer still run`)
     }
 
     return next(e)
@@ -190,7 +194,7 @@ export const register: Register = on => {
     const composed = await next(e)
     const id = await $.session.id()
     const list = sortTasks(await read($, tasks))
-    const board = list.map(t => `${t.id} | ${label(t)} | ${t.status} | ${t.owner} | ${coord(t)}`).join('\n')
+    const board = list.map(t => `${t.id} | ${pcell(t)} | ${label(t)} | ${t.status} | ${t.owner} | ${coord(t)}`).join('\n')
     const text = [
       `Coordinator session id: ${id} (use in task headers)`,
       list.length ? `Task board (tasks/*.md, ${summary(list)}):\n${board}` : '',
@@ -205,7 +209,7 @@ export const register: Register = on => {
   })
 
   // The Markdown table reaches every client (the Mac app over Remote Control draws no panes).
-  on('command.run', { command: 'coordinator' }, async $ => {
+  on('command.run', { command: COMMAND }, async $ => {
     await sync($)
     await $.ui.open({ id: PANE, title: 'Coordinator' }).catch(() => undefined)
     const now = await $.clock.now()
@@ -289,8 +293,9 @@ export const register: Register = on => {
     rest -= doneRows
     const recent = rest >= 3 ? activity(list, Math.min(8, rest - 2)) : []
 
-    // Columns: marker 2, ID 5, status 8, agent 15, coordinator 9, last activity 6; the rest is shared.
-    const flex = Math.max(10, width - 45)
+    // Columns: marker 2, ID 5, P (`P1 · H/S` wide, `P1` narrow), status 8, agent 15, coordinator 9, last activity 6; the rest is shared.
+    const pW = wide ? 9 : 3
+    const flex = Math.max(10, width - 45 - pW)
     const taskW = wide ? Math.floor(flex * 0.3) : flex
     const sumW = wide ? Math.floor(flex * 0.25) : 0
     const msgW = wide ? Math.floor(flex * 0.25) : 0
@@ -338,7 +343,7 @@ export const register: Register = on => {
         {list.length > 0 && (
           <Box key="head">
             <Text dimColor bold wrap="truncate-end">
-              {`  ${pad('ID', 5)}${pad('Status', 8)}${pad('Task', taskW)}${pad('Agent', 15)}${pad('Coord', 9)}${pad('Last', 6)}${
+              {`  ${pad('ID', 5)}${pad('P', pW)}${pad('Status', 8)}${pad('Task', taskW)}${pad('Agent', 15)}${pad('Coord', 9)}${pad('Last', 6)}${
                 wide ? `${pad('Summary', sumW)}${pad('Last message', msgW)}${pad('Next', nextW)}` : ''
               }`}
             </Text>
@@ -356,6 +361,9 @@ export const register: Register = on => {
             <Box key={`task-${task.id}`}>
               <Text color={color}>{'▍ '}</Text>
               <Text bold>{pad(task.id, 5)}</Text>
+              <Text bold={prioOf(task) === 'P1'} dimColor={!task.priority}>
+                {pad(wide ? pcell(task) : task.priority ? prioOf(task) : '—', pW)}
+              </Text>
               <Text color={color}>{pad(state, 8)}</Text>
               <Text wrap="truncate-end">{pad(label(task), taskW)}</Text>
               <Text color={agent && isLive(agent) ? 'claude' : undefined} dimColor={!agent || !isLive(agent)}>

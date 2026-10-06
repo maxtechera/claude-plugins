@@ -10,7 +10,7 @@ Exit 0 with no output if there is no tasks/ dir.
 """
 import os, re, subprocess, sys, time, tempfile
 
-FIELDS = ("status", "owner", "session", "linear", "about")
+FIELDS = ("status", "owner", "session", "linear", "about", "priority", "impact", "effort")
 
 
 def find_root(arg):
@@ -33,7 +33,7 @@ def parse(path):
         return None
     tid = os.path.splitext(os.path.basename(path))[0]
     t = {"id": tid, "title": "", "about": "", "status": "", "owner": "", "session": "",
-         "linear": "", "activity": "", "summary": "", "next": "",
+         "linear": "", "priority": "", "impact": "", "effort": "", "activity": "", "summary": "", "next": "",
          "mtime": os.path.getmtime(path)}
     section = None
     last = None
@@ -142,26 +142,42 @@ def coord(t):
     return (t["session"].strip()[:8]) or "\u2014"
 
 
+def pcell(t):
+    p = (t.get("priority") or "").strip().upper()
+    if not p:
+        return "\u2014"
+    return "%s \u00b7 %s/%s" % (p, (t.get("impact") or "?")[:1].upper(), (t.get("effort") or "?")[:1].upper())
+
+
+def sort_tasks(tasks):
+    def key(t):
+        p = re.match(r"P(\d)", (t.get("priority") or "").strip().upper())
+        i = (t.get("impact") or "").strip().lower()[:1]
+        return (int(p.group(1)) if p else 9, {"h": 0, "m": 1, "l": 2}.get(i, 3))
+    return sorted(tasks, key=key)
+
+
 def board_table(tasks):
-    rows = ["| ID | Title | Status | Owner | Coordinator | Linear | Last activity | Summary | Last message | Next |",
-            "|---|---|---|---|---|---|---|---|---|---|"]
+    tasks = sort_tasks(tasks)
+    rows = ["| ID | P | Title | Status | Owner | Coordinator | Linear | Last activity | Summary | Last message | Next |",
+            "|---|---|---|---|---|---|---|---|---|---|---|"]
     for t in tasks:
-        rows.append("| " + " | ".join(cell(coord(t) if k == "session" else what(t) if k == "title" else t[k]) for k in
-                    ("id", "title", "status", "owner", "session", "linear",
+        rows.append("| " + t["id"] + " | " + cell(pcell(t)) + " | " + " | ".join(cell(coord(t) if k == "session" else what(t) if k == "title" else t[k]) for k in
+                    ("title", "status", "owner", "session", "linear",
                      "activity", "summary")) + " | " + cell(last_message(t)) +
                     " | " + cell(t["next"]) + " |")
     return "\n".join(rows)
 
 
 def session_table(tasks, sid):
-    mine = [t for t in tasks if sid and t["session"].strip() == sid]
+    mine = sort_tasks([t for t in tasks if sid and t["session"].strip() == sid])
     if not mine:
         return ""
-    rows = ["| ID | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |",
-            "|---|---|---|---|---|---|---|---|"]
+    rows = ["| ID | P | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |",
+            "|---|---|---|---|---|---|---|---|---|"]
     for t in mine:
-        rows.append("| " + " | ".join(cell(coord(t) if k == "session" else what(t) if k == "title" else t[k]) for k in
-                    ("id", "title", "owner", "session", "activity", "summary")) + " | " +
+        rows.append("| " + t["id"] + " | " + cell(pcell(t)) + " | " + " | ".join(cell(coord(t) if k == "session" else what(t) if k == "title" else t[k]) for k in
+                    ("title", "owner", "session", "activity", "summary")) + " | " +
                     cell(last_message(t)) + " | " + cell(t["next"]) + " |")
     return "\n".join(rows)
 
@@ -230,13 +246,13 @@ def selftest():
         assert main([d]) == 0
         txt = open(os.path.join(d, "TASKS.md")).read()
         assert "do not edit" in txt
-        assert "| Q1 | Make hints work | doing | luna | s-abc | ENG-1 | 10:20 | test written | " in txt, txt
+        assert "| Q1 | — | Make hints work | doing | luna | s-abc | ENG-1 | 10:20 | test written | " in txt, txt
         assert "| run it (blocked: waiting on CI) |" in txt, txt
-        assert "| L2 | Payment | todo | sonnet | s-xyz | — | " in txt, txt
+        assert "| L2 | — | Payment | todo | sonnet | s-xyz | — | " in txt, txt
         assert "Q0 — Old" in txt
         ts = load(d)
         st = session_table(ts, "s-abc")
-        assert st.splitlines()[2].startswith("| Q1 | Make hints work | luna | s-abc | 10:20 |"), st
+        assert st.splitlines()[2].startswith("| Q1 | — | Make hints work | luna | s-abc | 10:20 |"), st
         assert "L2" not in st
         assert session_table(ts, "nope") == ""
         q = [t for t in ts if t["id"] == "Q1"][0]

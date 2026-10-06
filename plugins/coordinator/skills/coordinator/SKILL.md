@@ -41,6 +41,7 @@ An editable example: replace the models and roles with your own, or put the tabl
 
 - One file per task: `tasks/<ID>.md`. Template: `templates/task.md` in this skill's folder.
 - Every task has an About: line in plain words; tables and replies refer to tasks by it, not by ID alone.
+- Every task has Priority (P1–P3), Impact and Effort; the board and reply tables sort by priority, then impact.
 - One writer at a time: the task's owner.
 - `tasks/later/` = parked, off the board; `tasks/done/` = closed; `tasks/archive/` = out of scope after a reset (kept for reference, never read as work).
 - Header lines: `Status:` `Owner:` (agent) `Session:` (session id) `Linear:` (key or -) `May edit:` (paths/globs).
@@ -161,4 +162,4 @@ No file = no Linear, no prefixes (use T1, T2...), push only when the user asks.
 
 - `codex-agents`: spawning Codex agents, msg.sh messaging, model routing (Luna/Sol/Astra).
 - `daily-update`: AM/EOD stakeholder update, where a project has it.
-- The coordinator plugin's `/coordinator` pane and status line show the board and live agents; its system-prompt section carries the session id.
+- The coordinator plugin's `/coordinator-board` command opens its pane and prints the board with live agents; the footer shows the counts; its system-prompt section carries the session id.

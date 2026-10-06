@@ -5,9 +5,10 @@ import type { Agent, Task } from '../types'
 const header = (text: string, name: string) =>
   text.match(new RegExp(`^${name}:\\s*(.*)$`, 'm'))?.[1]?.trim() ?? ''
 
-export const parseTask = (file: string, text: string, mtimeMs: number): Task => {
+export const parseTask = (name: string, text: string, mtimeMs: number, dir: string): Task => {
+  const file = `${dir}/${name}`
   const title = text.match(/^#\s+(.*)$/m)?.[1] ?? ''
-  const [id = file.replace(/\.md$/, ''), rest = title] = title.split(/\s+[—-]\s+/, 2)
+  const [id = name.replace(/\.md$/, ''), rest = title] = title.split(/\s+[—-]\s+/, 2)
   const progress = text.split(/^## Progress\s*$/m)[1] ?? ''
   const lines = progress
     .split('\n')
@@ -20,6 +21,7 @@ export const parseTask = (file: string, text: string, mtimeMs: number): Task => 
     title: rest.trim(),
     status: header(text, 'Status') || '?',
     owner: header(text, 'Owner') || '—',
+    session: header(text, 'Session'),
     last: last.replace(/^\d{1,2}:\d{2}\s+/, ''),
     lastAt: last.match(/^(\d{1,2}:\d{2})/)?.[1] ?? '',
     mtimeMs,

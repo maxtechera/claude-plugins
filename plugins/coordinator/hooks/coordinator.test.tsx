@@ -6,13 +6,19 @@ import type { Task } from '../types'
 
 // 2026-10-06 13:20 local: Progress lines at 13:00 are 20m quiet.
 const NOW = new Date(2026, 9, 6, 13, 20).getTime()
+const SESSION = 'sess-1'
 
-const fixture = () => {
-  const files: Record<string, { text: string; mtimeMs: number }> = {
-    'T1.md': { text: '# T1 — Build pane\n\nStatus: doing\nOwner: Mod builder\n\n## Progress\n13:00 Mod builder | wrote register | test | none\n', mtimeMs: 1 },
-    'T2.md': { text: '# T2 — Read prior art\n\nStatus: review\nOwner: Reader\n\n## Progress\n', mtimeMs: 1 },
-    'T3.md': { text: '# T3 — Wait on keys\n\nStatus: blocked(user)\nOwner: —\n\n## Progress\n13:15 Coordinator | asked for keys | — | user\n', mtimeMs: 1 },
-    'T4.md': { text: '# T4 — Old work\n\nStatus: done(abc123)\nOwner: Reader\n\n## Progress\n', mtimeMs: 1 },
+type Files = Record<string, { text: string; mtimeMs: number }>
+
+const task = (id: string, title: string, status: string, owner: string, progress = '', session = SESSION) =>
+  `# ${id} — ${title}\n\nStatus: ${status}\nOwner: ${owner}\nSession: ${session}\n\n## Progress\n${progress}`
+
+const fixture = (dir = '/repo/tasks') => {
+  const files: Files = {
+    [`${dir}/T1.md`]: { text: task('T1', 'Build pane', 'doing', 'Mod builder', '13:00 Mod builder | wrote register | test | none\n'), mtimeMs: 1 },
+    [`${dir}/T2.md`]: { text: task('T2', 'Read prior art', 'review', 'Reader'), mtimeMs: 1 },
+    [`${dir}/T3.md`]: { text: task('T3', 'Wait on keys', 'blocked(user)', '—', '13:15 Coordinator | asked for keys | — | user\n'), mtimeMs: 1 },
+    [`${dir}/T4.md`]: { text: task('T4', 'Old work', 'done(abc123)', 'Reader'), mtimeMs: 1 },
   }
   const roster: AgentInfo[] = [
     { id: 'a1', name: 'mod-builder', description: 'Build pane', type: 'general-purpose', status: 'running' },
@@ -20,28 +26,52 @@ const fixture = () => {
     { id: 'a3', name: '', description: 'prompt suggestion', type: 'prompt_suggestion', status: 'running' },
   ]
 
-  return { files, roster }
+  return { files, roster, gits: ['/repo/.git'], cwd: '/repo/sub', pinned: [] as (string | undefined)[], modes: [] as readonly string[] }
 }
 
-const engine = (on: On, fx: ReturnType<typeof fixture>) => {
+type Fixture = ReturnType<typeof fixture>
+
+// What the engine answers beneath the plugin, over an in-memory file tree.
+const engine = (on: On, fx: Fixture) => {
   const clock = mock.clock(on, { now: NOW })
+  const isDir = (path: string) => Object.keys(fx.files).some(f => f.startsWith(`${path}/`))
   on('command.register', async ($, e) => ({ value: { command: e.name } }))
-  on('ui.status', async () => ({ value: undefined }))
+  on('ui.status', async ($, e) => {
+    fx.pinned.push(e.text)
+
+    return { value: undefined }
+  })
   on('ui.open', async () => ({ value: undefined as never }))
-  on('session.start', async () => ({ cwd: '/repo/sub' }))
-  on('session.cwd', async () => ({ value: '/repo/sub' }))
-  on('fs.exists', async ($, e) => ({ value: ['/repo/.git', '/repo/tasks'].includes(e.path) }))
-  on('fs.list', async () => ({
-    value: Object.entries(fx.files).map(([name, f]) => ({ name, kind: 'file' as const, size: 1, mtimeMs: f.mtimeMs, isLink: false })),
-  }))
+  on('session.start', async () => ({ cwd: fx.cwd }))
+  on('session.cwd', async () => ({ value: fx.cwd }))
+  on('session.id', async () => ({ value: SESSION }))
+  on('fs.exists', async ($, e) => ({ value: fx.gits.includes(e.path) || e.path in fx.files || isDir(e.path) }))
+  on('fs.list', async ($, e) => {
+    const names = new Map<string, 'file' | 'dir'>()
+    for (const f of Object.keys(fx.files)) {
+      if (!f.startsWith(`${e.path}/`)) continue
+      const [head = '', ...tail] = f.slice(e.path.length + 1).split('/')
+      names.set(head, tail.length ? 'dir' : 'file')
+    }
+    const value = [...names].map(([name, kind]) => ({
+      name,
+      kind,
+      size: 1,
+      mtimeMs: fx.files[`${e.path}/${name}`]?.mtimeMs ?? 0,
+      isLink: false,
+    }))
+
+    return { value }
+  })
   on('fs.read', async ($, e) => {
-    const f = fx.files[e.path.replace('/repo/tasks/', '')]
+    const f = fx.files[e.path]
     if (!f) throw new Error(`unexpected read ${e.path}`)
 
     return { value: f.text }
   })
   on('agent.list', async () => ({ value: fx.roster }))
   on('ui.render', async ($, e) => {
+    if (e.component === 'SessionMode') fx.modes = e.props.modes
     const { Box, Text } = $.ui.resolve(e)
 
     return (
@@ -54,15 +84,18 @@ const engine = (on: On, fx: ReturnType<typeof fixture>) => {
   return clock
 }
 
-const start = ($: { session: { start: (e: never) => Promise<unknown> } }) =>
-  $.session.start({ cwd: '/repo/sub', surface: 'terminal', isInteractive: true } as never)
+const start = ($: { session: { start: (e: never) => Promise<unknown> } }, cwd = '/repo/sub') =>
+  $.session.start({ cwd, surface: 'terminal', isInteractive: true } as never)
 
 const PANE = {
   plugin: 'coordinator',
   component: 'Pane',
   requestId: 'coordinator',
-  props: { title: 'Coordinator', isFocused: false, bodyColumns: 100 } as never,
+  props: { title: 'Coordinator', isFocused: false, bodyColumns: 70 } as never,
 } as const
+
+const rowKeys = async (ui: { findAll: (q: { type: string }) => Promise<readonly { key?: string }[]> }, prefix: string) =>
+  (await ui.findAll({ type: 'Box' })).map(b => b.key).filter(k => k?.startsWith(prefix))
 
 test('sort puts blocked, review, doing, todo first and done last', () => {
   const t = (id: string, status: string) => ({ id, status }) as Task
@@ -70,7 +103,7 @@ test('sort puts blocked, review, doing, todo first and done last', () => {
   expect(order.map(x => x.id)).toEqual(['T5', 'T4', 'T3', 'T2', 'T1'])
 })
 
-test('pane redraws on its own after a task file edit and an agent spawn', async ($, on) => {
+test('pane: one row per task, running agents on top, done collapsed, redraws after a file edit', async ($, on) => {
   const fx = fixture()
   const clock = engine(on, fx)
   await start($)
@@ -78,30 +111,41 @@ test('pane redraws on its own after a task file edit and an agent spawn', async 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ key: 'summary', text: 'doing 1 · review 1 · blocked 1 · 2 running' })).toBeDefined()
-    // Needs-attention first; done collapsed.
-    const keys = (await ui.findAll({ type: 'Box' })).map(b => b.key).filter(k => k?.startsWith('task-'))
-    expect(keys).toEqual(['task-T3', 'task-T2', 'task-T1'])
+    expect(await rowKeys(ui, 'task-')).toEqual(['task-T3', 'task-T2', 'task-T1'])
     expect(await ui.find({ key: 'closed', text: '1 done' })).toBeDefined()
-    // Matched by owner; helper loop hidden; unmatched running agent listed.
-    expect(await ui.find({ key: 'task-T1', text: /running/ })).toBeDefined()
+    // Running agents first, each with its task; helper loop hidden.
+    expect(await rowKeys(ui, 'agent-')).toEqual(['agent-a1', 'agent-a2'])
+    expect(await ui.find({ key: 'agent-a1', text: /T1/ })).toBeDefined()
+    // Short status, no evidence; owner marked live; staleness.
+    expect(await ui.find({ key: 'task-T3', text: /blocked\s/ })).toBeDefined()
+    expect(await ui.find({ key: 'task-T3', text: /\(user\)/ })).toBeUndefined()
+    expect(await ui.find({ key: 'task-T1', text: /● Mod builder/ })).toBeDefined()
     expect(await ui.find({ key: 'task-T1', text: /quiet 20m/ })).toBeDefined()
-    expect(await ui.find({ key: 'agent-a2' })).toBeDefined()
-    expect(await ui.find({ key: 'agent-a3' })).toBeUndefined()
     await ui.unmount()
   }
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  fx.files['T1.md'] = {
-    text: '# T1 — Build pane\n\nStatus: review\nOwner: Mod builder\n\n## Progress\n13:20 Mod builder | tests green | review | none\n',
-    mtimeMs: 2,
-  }
+  fx.files['/repo/tasks/T1.md'] = { text: task('T1', 'Build pane', 'review', 'Mod builder', '13:20 Mod builder | tests green | review | none\n'), mtimeMs: 2 }
   fx.roster = [...fx.roster, { id: 'a9', name: 'fixer', description: 'T2 fix the reader', type: 'general-purpose', status: 'running' }]
   await clock.advance(1000)
-  expect(await ui.find({ key: 'task-T1', text: /tests green/ })).toBeDefined()
   expect(await ui.find({ key: 'summary', text: 'review 2' })).toBeDefined()
+  expect(await ui.find({ key: 'task-T1', text: /review/ })).toBeDefined()
   // Matched by the task ID in its brief.
-  expect(await ui.find({ key: 'task-T2', text: /running/ })).toBeDefined()
-  expect(await ui.find({ key: 'agent-a9' })).toBeUndefined()
+  expect(await ui.find({ key: 'agent-a9', text: /T2/ })).toBeDefined()
+  expect(await ui.find({ key: 'task-T2', text: /● Reader/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('session started in a parent repo finds its tasks in a child repo', async ($, on) => {
+  const fx = fixture('/dev/child/tasks')
+  fx.gits = ['/dev/.git', '/dev/child/.git']
+  fx.cwd = '/dev'
+  fx.files['/dev/other/tasks/X1.md'] = { text: task('X1', 'Not ours', 'doing', 'Someone', '', 'other-session'), mtimeMs: 1 }
+  engine(on, fx)
+  await start($, '/dev')
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'summary', text: 'doing 1 · review 1 · blocked 1' })).toBeDefined()
+  expect(await ui.find({ key: 'task-X1' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -117,21 +161,20 @@ test('/coordinator answers a Markdown board for clients without panes', async ($
   expect(text).toContain('| 20m |')
 })
 
-test('band shows counts only on narrow terminals and passes on otherwise', async ($, on) => {
-  engine(on, fixture())
+test('counts sit in the footer mode labels, with no band and no pinned status', async ($, on) => {
+  const fx = fixture()
+  engine(on, fx)
   await start($)
-  const band = (bodyColumns: number) =>
-    $.ui.mount({
-      plugin: 'coordinator',
-      surface: 'terminal',
-      component: 'AbovePrompt',
-      props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns } as never,
-    })
-  const narrow = await band(80)
-  expect(await narrow.find({ key: 'coordinator-band', text: /doing 1/ })).toBeDefined()
-  await narrow.unmount()
-  const wide = await band(200)
-  expect(await wide.find({ key: 'coordinator-band' })).toBeUndefined()
-  expect(await wide.find({ key: 'engine' })).toBeDefined()
-  await wide.unmount()
+  const footer = await $.ui.mount({ plugin: 'coordinator', surface: 'terminal', component: 'SessionMode', props: { modes: ['focus'] } })
+  expect(fx.modes).toEqual(['focus', 'doing 1 · review 1 · blocked 1 · 2 running'])
+  await footer.unmount()
+  const band = await $.ui.mount({
+    plugin: 'coordinator',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 80 } as never,
+  })
+  expect(await band.find({ key: 'engine' })).toBeDefined()
+  await band.unmount()
+  expect(fx.pinned.every(text => text === undefined)).toBe(true)
 })

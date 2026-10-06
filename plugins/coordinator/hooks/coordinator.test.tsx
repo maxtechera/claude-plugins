@@ -1,7 +1,7 @@
 import type { AgentInfo, On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { linkify, remoteRepo, short, sortTasks } from './board'
+import { detailLine, linkify, remoteRepo, short, sortTasks } from './board'
 import type { Task } from '../types'
 
 // 2026-10-06 13:20 local: Progress lines at 13:00 are 20m quiet.
@@ -60,6 +60,8 @@ const fixture = (dir = '/repo/tasks') => {
     taken: [] as string[],
     registered: [] as string[],
     logs: [] as string[],
+    // SHAs git would confirm with `cat-file -e` in the fixture's repo; others come back unconfirmed.
+    commits: [] as string[],
   }
 }
 
@@ -115,6 +117,13 @@ const engine = (on: On, fx: Fixture) => {
     return { value: f.text }
   })
   on('agent.list', async () => ({ value: fx.roster }))
+  // `git cat-file -e <sha>^{commit}`: confirmed for fx.commits, else exit 1 — whatever shape the call's event takes,
+  // the SHA is findable in its serialized form.
+  on('process.run', async ($, e) => {
+    const sha = JSON.stringify(e).match(/([0-9a-f]{7,40})\^\{commit\}/)?.[1]
+
+    return { value: { exitCode: sha && fx.commits.includes(sha) ? 0 : 1, stdout: '', stderr: '' } }
+  })
   on('ui.render', async ($, e) => {
     if (e.component === 'SessionMode') fx.modes = e.props.modes
     const { Box, Text } = $.ui.resolve(e)
@@ -190,7 +199,8 @@ test('pane at 70 columns: header, agent cards, two-line task rows, done row, act
   expect(await ui.find({ key: 'agent-a1-task', text: /Build pane — wrote register/ })).toBeDefined()
   expect(await keys(ui, /^task-/)).toEqual(['task-T3', 'task-T3-detail', 'task-T2', 'task-T2-detail', 'task-T1', 'task-T1-detail'])
   expect(await ui.find({ key: 'task-T1', text: /● Mod builder/ })).toBeDefined()
-  expect(await ui.find({ key: 'task-T1', text: /sess-1/ })).toBeDefined()
+  // The session id is always this table's own — it's dropped here and only shown where it varies (Other sessions).
+  expect(await ui.find({ key: 'task-T1', text: /sess-1/ })).toBeUndefined()
   expect(await ui.find({ key: 'task-T1-detail', text: /wrote register · quiet 20m → test/ })).toBeDefined()
   expect(await ui.find({ key: 'task-T3-detail', text: /blocked: user/ })).toBeDefined()
   expect(await ui.find({ key: 'done-T4', text: /Old work — shipped/ })).toBeDefined()
@@ -208,9 +218,9 @@ test('pane at 120 columns: one line per task with every table column', async ($,
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...pane(120), surface })
-    expect(await ui.find({ key: 'head', text: /ID.*P.*Status.*Task.*Agent.*Coord.*Last.*Summary.*Last message.*Next/ })).toBeDefined()
+    expect(await ui.find({ key: 'head', text: /ID.*P.*Status.*Task.*Agent.*Last.*Summary.*Last message.*Next/ })).toBeDefined()
     expect(await keys(ui, /^task-/)).toEqual(['task-T1', 'task-T3', 'task-T2'])
-    expect(await ui.find({ key: 'task-T1', text: /T1.*P1 · H\/S.*Build pane.*Mod builder.*sess-1.*13:00.*wrote register.*quiet 20m.*test/ })).toBeDefined()
+    expect(await ui.find({ key: 'task-T1', text: /T1.*P1 · H\/S.*Build pane.*Mod builder.*13:00.*wrote register.*quiet 20m.*test/ })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -311,17 +321,32 @@ test('short leaves plain-word cells alone and cuts old-style lines at the dash, 
   expect(cut.length).toBeLessThanOrEqual(40)
 })
 
+test('detailLine keeps a short head whole and gives next a bounded, never-empty tail', () => {
+  // Everything fits: no truncation at all.
+  expect(detailLine('abc', 'xyz', 'next', 100)).toEqual({ head: 'abc · xyz', next: 'next' })
+  // The head alone fits the budget; next only gets what's left, but it still shows something.
+  expect(detailLine('A'.repeat(30), '', 'B'.repeat(30), 40)).toEqual({ head: 'A'.repeat(30), next: `${'B'.repeat(6)}…` })
+  // The head alone would already fill the whole budget: it still yields room so next is never fully swallowed.
+  expect(detailLine('A'.repeat(60), '', 'B'.repeat(10), 40)).toEqual({ head: `${'A'.repeat(29)}…`, next: `${'B'.repeat(6)}…` })
+  // No next: the head gets the full budget and no second segment is produced.
+  expect(detailLine('summary text', '', '', 20)).toEqual({ head: 'summary text', next: '' })
+})
+
 test('remotes and references become GitHub links', () => {
   expect(remoteRepo('[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:maxtechera/claude-plugins.git\n')).toBe('maxtechera/claude-plugins')
   expect(remoteRepo('[remote "origin"]\n\turl = https://github.com/last-rev-llc/if-marketing\n')).toBe('last-rev-llc/if-marketing')
   expect(remoteRepo('[remote "origin"]\n\turl = git@gitlab.com:a/b.git\n')).toBe('')
   const repo = 'o/r'
   expect(linkify('PR last-rev-llc/if-marketing#4 merged', repo)).toBe('PR [last-rev-llc/if-marketing#4](https://github.com/last-rev-llc/if-marketing/pull/4) merged')
-  expect(linkify('opened #12', repo)).toBe('opened [#12](https://github.com/o/r/pull/12)')
+  // A bare #N only links with a PR/pull word in front of it — stops any stray `#12`-looking text from linking.
+  expect(linkify('PR #12 opened', repo)).toBe('PR [#12](https://github.com/o/r/pull/12) opened')
+  expect(linkify('opened #12', repo)).toBe('opened #12')
   expect(linkify('see https://github.com/a/b/pull/3', repo)).toBe('see [a/b#3](https://github.com/a/b/pull/3)')
-  expect(linkify('pushed 80c90e8', repo)).toBe('pushed [80c90e8](https://github.com/o/r/commit/80c90e8)')
+  // A SHA only links once git has confirmed it as a real commit in the task's repo.
+  expect(linkify('pushed 80c90e8', repo, ['80c90e8'])).toBe('pushed [80c90e8](https://github.com/o/r/commit/80c90e8)')
+  expect(linkify('pushed 80c90e8', repo)).toBe('pushed 80c90e8')
   // No repo: bare #N and SHAs stay text; words of hex letters and session ids are never SHAs.
-  expect(linkify('opened #12, pushed 80c90e8', '')).toBe('opened #12, pushed 80c90e8')
+  expect(linkify('opened #12, pushed 80c90e8', '', ['80c90e8'])).toBe('opened #12, pushed 80c90e8')
   expect(linkify('defaced cafebabe f52310eb-451a', repo)).toBe('defaced cafebabe f52310eb-451a')
 })
 
@@ -345,6 +370,7 @@ test('/coordinator-board: plain-word cells, PRs and commits as links, newest art
   const fx = fixture()
   fx.files = { ...STYLE_FILES }
   fx.roster = []
+  fx.commits = ['bcc4f94']
   engine(on, fx)
   await start($)
   const text = await board($)
@@ -361,13 +387,14 @@ test('pane: the newest PR or commit is a pressable link, in Last activity when w
   const fx = fixture()
   fx.files = { ...STYLE_FILES }
   fx.roster = []
+  fx.commits = ['bcc4f94']
   engine(on, fx)
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...pane(120), surface })
     const links = await ui.findAll({ type: 'Link' })
     expect(links.map(link => link.props.href)).toEqual(['https://github.com/acme/site/commit/bcc4f94'])
-    expect(await ui.find({ key: 'task-T2', text: /Old style.*sess-1 +bcc4f94 pushed +verified 5/ })).toBeDefined()
+    expect(await ui.find({ key: 'task-T2', text: /Old style.*bcc4f94 pushed +verified 5/ })).toBeDefined()
     await ui.unmount()
   }
   const narrow = await $.ui.mount({ ...pane(70), surface: 'terminal' })

@@ -1,6 +1,6 @@
 {
   "name": "coordinator",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Coordinator role skill plus /coordinator-board: a live pane and Markdown board of tasks/*.md merged with running agents, and a footer count",
   "types": "./types/index.d.ts"
 }

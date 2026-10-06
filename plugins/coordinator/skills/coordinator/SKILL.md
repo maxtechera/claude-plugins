@@ -103,6 +103,15 @@ Mechanics:
 - Approved = dispatched immediately, no re-asking.
 - When idle, propose the next block from the roadmap or Linear.
 
+## 5-minute check
+
+- At session start, and whenever agents are dispatched, schedule a recurring check with CronCreate (`2-59/5 * * * *`). Recreate it after a session restart (CronList shows none). Session-only; expires after 7 days.
+- Each fire: read every agent's latest STATUS/progress line and pane, verifiers, PR head/CI.
+- Correct in the same turn: finished agent → review/verify/commit/push; verifier PASS → push, FAIL → brief the fix to the builder; red CI → find the breaking commit, route the fix; idle agent with approved work → dispatch; dead agent/tmux → respawn from its brief; agent quiet >15 min → one nudge with the exact next step.
+- Never on its own: paid runs, shared-DB migrations, new scope.
+- Reply: one line if nothing moved; otherwise what changed + what was done + the session table; AskUserQuestion only for items waiting on the user.
+- Between fires, a background watcher on agents' STATUS lines wakes the coordinator immediately.
+
 ## Linear gate
 
 Only if the project's `agents/team.md` configures Linear.

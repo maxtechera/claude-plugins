@@ -72,9 +72,24 @@ export const parseTask = (name: string, text: string, mtimeMs: number, dir: stri
     next: last?.next ?? '',
     progress: entries.slice(-KEEP),
     repo: '',
+    commits: [],
     mtimeMs,
     file: `${dir}/${name}`,
   }
+}
+
+// A clip to n characters, ending in an ellipsis when cut.
+export const cut = (text: string, n: number) => (text.length > n ? `${text.slice(0, Math.max(1, n - 1))}…` : text)
+
+// The narrow detail line's two segments — summary+extra, then next — sized so a long summary still leaves
+// next a bounded, visible tail instead of the two being cut together and next silently disappearing.
+export const detailLine = (sum: string, extra: string, next: string, width: number) => {
+  const head = `${sum || '—'}${extra ? ` · ${extra}` : ''}`
+  if (!next || next === '—') return { head: cut(head, width), next: '' }
+  const reserve = Math.min(next.length + 3, Math.max(10, Math.floor(width * 0.25)))
+  const headCut = cut(head, Math.max(4, width - reserve))
+
+  return { head: headCut, next: cut(next, Math.max(4, width - headCut.length - 3)) }
 }
 
 // A cell in plain words: the part before the first ` — ` or `;`, cut at a word to n characters.
@@ -97,32 +112,37 @@ export const remoteRepo = (config: string) => {
 
 export type Ref = { label: string; url: string; kind: 'pr' | 'commit' }
 
-// PR URLs, `owner/repo#N`, `#N` (the task's repo) and commit SHAs (7–40 hex, a digit and a letter; the task's repo).
+// Explicit references only: PR and issue URLs, `owner/repo#N`, `PR #N` / `pull #N` (the task's repo), and SHAs
+// (7–40 hex, a digit and a letter) git confirmed in the task's repo. A bare `#N` may be another repo's issue: text.
 const REF =
-  /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)|(?<![\w/])([\w.-]+\/[\w.-]+)#(\d+)\b|(?<![\w/&#])#(\d+)\b|(?<![\w-])((?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40})(?![\w-])/g
+  /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)|(?<![\w/])([\w.-]+\/[\w.-]+)#(\d+)\b|(?<=\b(?:PR|pr|Pr|pull|Pull) )#(\d+)\b|(?<![\w-])((?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40})(?![\w-])/g
 
-const refOf = (m: RegExpMatchArray, repo: string): Ref | undefined => {
+const refOf = (m: RegExpMatchArray, repo: string, commits: readonly string[]): Ref | undefined => {
   const [, urlRepo, urlN, fullRepo, fullN, n, sha] = m
   if (urlRepo && urlN) return { label: `${urlRepo}#${urlN}`, url: m[0], kind: 'pr' }
   if (fullRepo && fullN) return { label: `${fullRepo}#${fullN}`, url: `https://github.com/${fullRepo}/pull/${fullN}`, kind: 'pr' }
   if (n && repo) return { label: `#${n}`, url: `https://github.com/${repo}/pull/${n}`, kind: 'pr' }
-  if (sha && repo) return { label: sha.slice(0, 7), url: `https://github.com/${repo}/commit/${sha}`, kind: 'commit' }
+  if (sha && repo && commits.includes(sha)) return { label: sha.slice(0, 7), url: `https://github.com/${repo}/commit/${sha}`, kind: 'commit' }
 
   return undefined
 }
 
-export const refs = (text: string, repo: string) =>
+// Candidate SHAs in a text, for git to confirm.
+export const shas = (text: string) =>
+  [...text.matchAll(REF)].flatMap(m => (m[6] ? [m[6]] : []))
+
+export const refs = (text: string, repo: string, commits: readonly string[] = []) =>
   [...text.matchAll(REF)].flatMap(m => {
-    const ref = refOf(m, repo)
+    const ref = refOf(m, repo, commits)
 
     return ref ? [{ ref, at: m.index ?? 0, length: m[0].length }] : []
   })
 
 // Text with its PRs and commits as Markdown links.
-export const linkify = (text: string, repo: string) => {
+export const linkify = (text: string, repo: string, commits: readonly string[] = []) => {
   let out = ''
   let from = 0
-  for (const { ref, at, length } of refs(text, repo)) {
+  for (const { ref, at, length } of refs(text, repo, commits)) {
     out += `${text.slice(from, at)}[${ref.label}](${ref.url})`
     from = at + length
   }
@@ -132,11 +152,13 @@ export const linkify = (text: string, repo: string) => {
 
 const PR_STATE = /\b(merged|closed|opened|open|draft|approved|ready for review|green|red)\b/i
 
+// Where a task names PRs and commits, oldest first: its status, then its Progress.
+export const artifactLines = (task: Task) => [task.status, ...task.progress.map(entry => `${entry.what} ${entry.next}`)]
+
 // The newest PR or commit a task's Progress (newest line first), then its status, names, with its state.
 export const artifact = (task: Task) => {
-  const lines = [...task.progress].reverse().map(entry => `${entry.what} ${entry.next}`)
-  for (const line of [...lines, task.status]) {
-    const found = refs(line, task.repo ?? '')
+  for (const line of [...artifactLines(task)].reverse()) {
+    const found = refs(line, task.repo ?? '', task.commits ?? [])
     const hit = found.find(f => f.ref.kind === 'pr') ?? found[0]
     if (!hit) continue
     const state =
@@ -336,7 +358,7 @@ export const activityCell = (task: Task) => {
 // One row of `tasks-index.py --session`'s table, each cell in plain words and PRs and commits as links.
 // A row whose cells are already short, with no PRs or commits, is the script's row.
 export const tableRow = (task: Task, agent: Agent | undefined, now: number) => {
-  const link = (text: string) => linkify(cell(text), task.repo ?? '')
+  const link = (text: string) => linkify(cell(text), task.repo ?? '', task.commits ?? [])
 
   return `| ${[
     cell(task.id),
@@ -362,7 +384,7 @@ export const markdown = (tasks: readonly Task[], agents: readonly Agent[], sessi
     return `- ${agent.name || agent.description} → ${task ? `${task.id} ${short(label(task))}` : '—'} · ${what}`
   })
   const others = sortTasks(tasks.filter(task => !list.includes(task) && !isClosed(task)))
-  const recent = activity(list, 5).map(({ task, entry }) => `- ${entry.at} ${task.id} ${entry.who ? `${entry.who} · ` : ''}${linkify(short(entry.what, 60), task.repo ?? '')}`)
+  const recent = activity(list, 5).map(({ task, entry }) => `- ${entry.at} ${task.id} ${entry.who ? `${entry.who} · ` : ''}${linkify(short(entry.what, 60), task.repo ?? '', task.commits ?? [])}`)
 
   return [
     `**Board:** ${summary(list, agents)}`,

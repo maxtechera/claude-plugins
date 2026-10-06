@@ -33,6 +33,8 @@ export type Task = {
   progress: Entry[]
   /** `owner/repo` of the task dir's GitHub origin, '' when none; PRs and SHAs link there. */
   repo: string
+  /** SHAs its text names that `git cat-file -e` found in that repo. */
+  commits: string[]
   mtimeMs: number
   /** The file's full path: the record's key across task dirs. */
   file: string

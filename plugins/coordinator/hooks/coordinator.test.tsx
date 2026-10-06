@@ -56,6 +56,9 @@ const fixture = (dir = '/repo/tasks') => {
     pinned: [] as (string | undefined)[],
     modes: [] as readonly string[],
     refuse: '',
+    // Names other commands or skills already own, refused as the engine refuses them.
+    taken: [] as string[],
+    registered: [] as string[],
     logs: [] as string[],
   }
 }
@@ -68,6 +71,8 @@ const engine = (on: On, fx: Fixture) => {
   const isDir = (path: string) => Object.keys(fx.files).some(f => f.startsWith(`${path}/`))
   on('command.register', async ($, e) => {
     if (fx.refuse) return { deny: fx.refuse }
+    if (fx.taken.includes(e.name)) return { deny: `"/${e.name}" refused: it is the plugin's /coordinator:${e.name}` }
+    fx.registered.push(e.name)
 
     return { value: { command: e.name } }
   })
@@ -237,6 +242,16 @@ test('an agent whose brief names a done task follows its open task', async ($, o
   expect(await ui.find({ key: 'agent-a1', text: /T9/ })).toBeDefined()
   expect(await ui.find({ key: 'task-T9', text: /● Mod builder/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('/coordinator-board registers beside the skill coordinator:coordinator, with no refusal line', async ($, on) => {
+  const fx = fixture()
+  fx.taken = ['coordinator']
+  engine(on, fx)
+  await start($)
+  expect(fx.registered).toEqual(['coordinator-board'])
+  expect(fx.logs.filter(line => line.includes('refused') || line.includes('not registered'))).toEqual([])
+  expect(await board($)).toContain('**Board:**')
 })
 
 test('a refused /coordinator-board is logged and the board still goes live', async ($, on) => {

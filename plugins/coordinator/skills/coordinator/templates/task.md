@@ -1,5 +1,6 @@
 # <ID> — <short title>
 
+About: <one plain sentence, ≤12 words, no IDs/jargon/file names: what this gets done for the user>
 Status: todo
 Owner: <agent, e.g. sonnet-1 / luna / sol-lead / opus>
 Session: <session id from session-start hook>
@@ -14,6 +15,9 @@ May edit: <paths/globs>
 
 ## Done when
 - <observable, checkable condition>
+
+## Plan
+<steps, files, risks, cost/spend, irreversible actions, Verify. The user approves before status moves to doing; log "plan approved by the user HH:MM" in Progress>
 
 ## Verify
 - <exact command or check, and who runs it (Verificator for high-risk)>

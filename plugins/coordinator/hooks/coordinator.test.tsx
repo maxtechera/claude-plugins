@@ -26,7 +26,16 @@ const fixture = (dir = '/repo/tasks') => {
     { id: 'a3', name: '', description: 'prompt suggestion', type: 'prompt_suggestion', status: 'running' },
   ]
 
-  return { files, roster, gits: ['/repo/.git'], cwd: '/repo/sub', pinned: [] as (string | undefined)[], modes: [] as readonly string[] }
+  return {
+    files,
+    roster,
+    gits: ['/repo/.git'],
+    cwd: '/repo/sub',
+    pinned: [] as (string | undefined)[],
+    modes: [] as readonly string[],
+    refuse: '',
+    logs: [] as string[],
+  }
 }
 
 type Fixture = ReturnType<typeof fixture>
@@ -35,7 +44,16 @@ type Fixture = ReturnType<typeof fixture>
 const engine = (on: On, fx: Fixture) => {
   const clock = mock.clock(on, { now: NOW })
   const isDir = (path: string) => Object.keys(fx.files).some(f => f.startsWith(`${path}/`))
-  on('command.register', async ($, e) => ({ value: { command: e.name } }))
+  on('command.register', async ($, e) => {
+    if (fx.refuse) return { deny: fx.refuse }
+
+    return { value: { command: e.name } }
+  })
+  on('ui.log', async ($, e) => {
+    fx.logs.push(e.text)
+
+    return { value: undefined }
+  })
   on('ui.status', async ($, e) => {
     fx.pinned.push(e.text)
 
@@ -154,11 +172,11 @@ test('/coordinator answers a Markdown board for clients without panes', async ($
   await start($)
   const ran = await $.command.run({ command: 'coordinator', args: '' } as never)
   const text = 'text' in ran ? String(ran.text) : ''
-  expect(text).toContain('| ID | Task | Status | Owner | Last progress | Quiet |')
+  expect(text).toContain('| ID | Task | Status | Owner | Coordinator | Last progress | Quiet |')
   expect(text.indexOf('| T3 |')).toBeLessThan(text.indexOf('| T2 |'))
   expect(text.startsWith('**Board:** doing 1 · review 1 · blocked 1')).toBe(true)
-  expect(text).toContain('| T3 | Wait on keys | blocked | — | asked for keys |  |')
-  expect(text).toContain('| T1 | Build pane | doing | Mod builder (running) | wrote register | quiet 20m |')
+  expect(text).toContain('| T3 | Wait on keys | blocked | — | sess-1 | asked for keys |  |')
+  expect(text).toContain('| T1 | Build pane | doing | Mod builder (running) | sess-1 | wrote register | quiet 20m |')
   expect(text).not.toContain('| T4 |')
   expect(text).toContain('1 done: T4')
   expect(text).not.toContain('\\|')
@@ -180,4 +198,44 @@ test('counts sit in the footer mode labels, with no band and no pinned status', 
   expect(await band.find({ key: 'engine' })).toBeDefined()
   await band.unmount()
   expect(fx.pinned.every(text => text === undefined)).toBe(true)
+})
+
+test('a refused /coordinator is logged and the board still goes live', async ($, on) => {
+  const fx = fixture()
+  fx.refuse = '"/coordinator" refused: it is the user\'s /coordinator'
+  const clock = engine(on, fx)
+  await start($)
+  expect(fx.logs.some(line => line.includes('/coordinator not registered') && line.includes('refused'))).toBe(true)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'summary', text: 'doing 1 · review 1 · blocked 1 · 2 running' })).toBeDefined()
+  fx.files['/repo/tasks/T1.md'] = { text: task('T1', 'Build pane', 'review', 'Mod builder'), mtimeMs: 2 }
+  await clock.advance(1000)
+  expect(await ui.find({ key: 'summary', text: 'doing 0 · review 2' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('plan sorts with review, About: replaces the title, the owning session shows, archive/ is ignored', async ($, on) => {
+  const fx = fixture()
+  fx.files['/repo/tasks/T5.md'] = {
+    text: `# T5 — Gate the plan\nAbout: Ship the plan gate\n\nStatus: plan\nOwner: Planner\nSession: other-session-id\n\n## Progress\n`,
+    mtimeMs: 1,
+  }
+  fx.files['/repo/tasks/archive/Z1.md'] = { text: task('Z1', 'Out of scope', 'doing', 'Nobody'), mtimeMs: 1 }
+  engine(on, fx)
+  await start($)
+
+  const ran = await $.command.run({ command: 'coordinator', args: '' } as never)
+  const text = 'text' in ran ? String(ran.text) : ''
+  expect(text.startsWith('**Board:** doing 1 · review 1 · blocked 1 · plan 1')).toBe(true)
+  expect(text).toContain('| T5 | Ship the plan gate | plan | Planner | other-se |  |  |')
+  expect(text.indexOf('| T5 |')).toBeLessThan(text.indexOf('| T1 |'))
+  expect(text).not.toContain('Z1')
+
+  const ui = await $.ui.mount({ ...PANE, props: { title: 'Coordinator', isFocused: false, bodyColumns: 140 } as never, surface: 'terminal' })
+  expect(await rowKeys(ui, 'task-')).toEqual(['task-T3', 'task-T2', 'task-T5', 'task-T1'])
+  expect(await ui.find({ key: 'task-T5', text: /Ship the plan gate/ })).toBeDefined()
+  expect(await ui.find({ key: 'task-T5', text: /Gate the plan/ })).toBeUndefined()
+  expect(await ui.find({ key: 'task-T5', text: /other-se/ })).toBeDefined()
+  expect(await ui.find({ key: 'task-Z1' })).toBeUndefined()
+  await ui.unmount()
 })

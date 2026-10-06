@@ -1,6 +1,8 @@
 export type Task = {
   id: string
   title: string
+  /** The `About:` line, plain words; '' when the task has none. */
+  about: string
   status: string
   owner: string
   session: string

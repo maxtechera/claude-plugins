@@ -40,10 +40,12 @@ An editable example: replace the models and roles with your own, or put the tabl
 ## Tasks
 
 - One file per task: `tasks/<ID>.md`. Template: `templates/task.md` in this skill's folder.
+- Every task has an About: line in plain words; tables and replies refer to tasks by it, not by ID alone.
 - One writer at a time: the task's owner.
-- `tasks/later/` = parked, off the board; `tasks/done/` = closed.
+- `tasks/later/` = parked, off the board; `tasks/done/` = closed; `tasks/archive/` = out of scope after a reset (kept for reference, never read as work).
 - Header lines: `Status:` `Owner:` (agent) `Session:` (session id) `Linear:` (key or -) `May edit:` (paths/globs).
-- Body sections: Goal, Inputs, Done when, Verify, Fast check, Progress.
+- Body sections: Goal, Inputs, Done when, Plan, Verify, Fast check, Progress.
+- Plan gate: an approved task is not yet started. A planner (Sonnet subagent or the task's lead) writes `## Plan` (steps, files, risks, cost/spend, anything irreversible such as migrations, holds, live writes, and Verify) and the status goes to `plan`. The coordinator shows the user a short summary. Only after the user approves does it move to `doing`; log "plan approved by the user HH:MM" in Progress. Exception: pure read-only diagnosis may run without a plan and produces findings only.
 - Fast check = offline or recorded check run before any live run. Required for quality tasks.
 - Progress is append-only. Line format: `HH:MM <who> | what | next | blocker`.
 - Claude subagents append a Progress line at every meaningful step (it is their 'last message' in the table); Codex agents' last message is read from their tmux pane.
@@ -52,7 +54,8 @@ States:
 
 | State | Meaning |
 |---|---|
-| todo | approved, not started |
+| todo | approved, not started (no plan yet) |
+| plan | plan written, waiting for the user |
 | doing | agent working |
 | blocked(<on whom>) | waiting on a named person or agent |
 | review | built, awaiting review or verificator |
@@ -64,6 +67,14 @@ States:
 - Finished files move to `tasks/done/` after review.
 - `TASKS.md` at the root is GENERATED from task headers by `tasks-index.py` in this skill's folder (`python3 <skill dir>/tasks-index.py <repo root>`). Never hand-edit. Run it after any header or Progress change.
 - Agents receive only their task IDs and read only those files.
+
+Ownership (the `Session:` header is the lock):
+- Claim before work: set `Session: <your id>` before dispatching or writing Progress. Claim only unclaimed (`Session: —`) tasks or ones the user assigns.
+- Check before acting: before writing a task file, messaging its agent, or committing its paths, read `Session:`. Owned by another session: don't act, tell the user, offer a handover.
+- Handover = the user says so. The old session writes Progress "handed to <id>"; the new one sets the header.
+- Never stop, message or respawn another session's agents (Codex `lead-<label>` sessions per codex-agents, tmux panes). Never kill a tmux server.
+- Non-owners write no Progress, except "handed to" / "note for owner" lines prefixed `coordinator(<short id>)`.
+- The session-start board shows the Session column; the reply table lists only this session's tasks.
 - File ownership: two agents never edit the same file at once; check the `May edit` header. Send a reassignment to both agents. An idle agent gets the next approved task in its area in the same turn.
 
 ## Agency
@@ -105,11 +116,12 @@ Only if the project's `agents/team.md` configures Linear.
 - First reply of a session opens "I'm the coordinator." plus the project board (if any): `tasks-index.py --board`.
 - EVERY reply ends with a table of this session's tasks, then the next step:
 
-| ID | Task | Agent | Last activity | Summary | Last message | Next |
-|---|---|---|---|---|---|---|
+| ID | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |
+|---|---|---|---|---|---|---|---|
 
 - Summary and Next come from the task's latest Progress line. Last message is the agent's tmux pane line (doing/review only), else the Progress "what", prefixed "quiet Nm · " if >15 min old. `tasks-index.py --session <id>` prints this table.
 - Omit the table only if the session has no tasks.
+- Before any question or summary that cites IDs (tasks, decisions, ledger rows), print a table first: ID · what it is in plain words · state · why it matters. Every question option also says what its ID is.
 - First session of the day, or after 17:00 local: offer the AM/EOD stakeholder update if the project configures one.
 
 ## URGENT STOP

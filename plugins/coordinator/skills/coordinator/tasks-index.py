@@ -4,13 +4,13 @@
 Usage:
   tasks-index.py [root]              write <root>/TASKS.md
   tasks-index.py [root] --board      print full table, no write
-  tasks-index.py [root] --session ID print that session's 7-column reply table
+  tasks-index.py [root] --session ID print that session's 8-column reply table
   tasks-index.py --selftest
 Exit 0 with no output if there is no tasks/ dir.
 """
 import os, re, subprocess, sys, time, tempfile
 
-FIELDS = ("status", "owner", "session", "linear")
+FIELDS = ("status", "owner", "session", "linear", "about")
 
 
 def find_root(arg):
@@ -32,7 +32,7 @@ def parse(path):
     except Exception:
         return None
     tid = os.path.splitext(os.path.basename(path))[0]
-    t = {"id": tid, "title": "", "status": "", "owner": "", "session": "",
+    t = {"id": tid, "title": "", "about": "", "status": "", "owner": "", "session": "",
          "linear": "", "activity": "", "summary": "", "next": "",
          "mtime": os.path.getmtime(path)}
     section = None
@@ -134,11 +134,19 @@ def last_message(t, now=None):
     return msg
 
 
+def what(t):
+    return t.get("about") or t["title"]
+
+
+def coord(t):
+    return (t["session"].strip()[:8]) or "\u2014"
+
+
 def board_table(tasks):
-    rows = ["| ID | Title | Status | Owner | Session | Linear | Last activity | Summary | Last message | Next |",
+    rows = ["| ID | Title | Status | Owner | Coordinator | Linear | Last activity | Summary | Last message | Next |",
             "|---|---|---|---|---|---|---|---|---|---|"]
     for t in tasks:
-        rows.append("| " + " | ".join(cell(t[k]) for k in
+        rows.append("| " + " | ".join(cell(coord(t) if k == "session" else what(t) if k == "title" else t[k]) for k in
                     ("id", "title", "status", "owner", "session", "linear",
                      "activity", "summary")) + " | " + cell(last_message(t)) +
                     " | " + cell(t["next"]) + " |")
@@ -149,11 +157,11 @@ def session_table(tasks, sid):
     mine = [t for t in tasks if sid and t["session"].strip() == sid]
     if not mine:
         return ""
-    rows = ["| ID | Task | Agent | Last activity | Summary | Last message | Next |",
-            "|---|---|---|---|---|---|---|"]
+    rows = ["| ID | Task | Agent | Coordinator | Last activity | Summary | Last message | Next |",
+            "|---|---|---|---|---|---|---|---|"]
     for t in mine:
-        rows.append("| " + " | ".join(cell(t[k]) for k in
-                    ("id", "title", "owner", "activity", "summary")) + " | " +
+        rows.append("| " + " | ".join(cell(coord(t) if k == "session" else what(t) if k == "title" else t[k]) for k in
+                    ("id", "title", "owner", "session", "activity", "summary")) + " | " +
                     cell(last_message(t)) + " | " + cell(t["next"]) + " |")
     return "\n".join(rows)
 
@@ -211,7 +219,7 @@ def selftest():
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(os.path.join(d, "tasks", "done"))
         open(os.path.join(d, "tasks", "Q1.md"), "w").write(
-            "# Q1 — Fix hints\n\nStatus: doing\nOwner: luna\nSession: s-abc\nLinear: ENG-1\n"
+            "# Q1 — Fix hints\nAbout: Make hints work\n\nStatus: doing\nOwner: luna\nSession: s-abc\nLinear: ENG-1\n"
             "May edit: a/**\n\n## Goal\nx\n\n## Progress\n<!-- c -->\n"
             "10:00 luna | started | write test | none\n"
             "10:20 luna | test written | run it | waiting on CI\n")
@@ -222,13 +230,13 @@ def selftest():
         assert main([d]) == 0
         txt = open(os.path.join(d, "TASKS.md")).read()
         assert "do not edit" in txt
-        assert "| Q1 | Fix hints | doing | luna | s-abc | ENG-1 | 10:20 | test written | " in txt, txt
+        assert "| Q1 | Make hints work | doing | luna | s-abc | ENG-1 | 10:20 | test written | " in txt, txt
         assert "| run it (blocked: waiting on CI) |" in txt, txt
         assert "| L2 | Payment | todo | sonnet | s-xyz | — | " in txt, txt
         assert "Q0 — Old" in txt
         ts = load(d)
         st = session_table(ts, "s-abc")
-        assert st.splitlines()[2].startswith("| Q1 | Fix hints | luna | 10:20 |"), st
+        assert st.splitlines()[2].startswith("| Q1 | Make hints work | luna | s-abc | 10:20 |"), st
         assert "L2" not in st
         assert session_table(ts, "nope") == ""
         q = [t for t in ts if t["id"] == "Q1"][0]

@@ -19,6 +19,7 @@ export const parseTask = (name: string, text: string, mtimeMs: number, dir: stri
   return {
     id: id.trim(),
     title: rest.trim(),
+    about: header(text, 'About'),
     status: header(text, 'Status') || '?',
     owner: header(text, 'Owner') || '—',
     session: header(text, 'Session'),
@@ -31,8 +32,8 @@ export const parseTask = (name: string, text: string, mtimeMs: number, dir: stri
 
 export const stateOf = (status: string) => status.replace(/\(.*$/, '').trim()
 
-// Needs-attention first; done and dropped last.
-const RANK: Record<string, number> = { blocked: 0, review: 1, doing: 2, todo: 3, done: 5, dropped: 6 }
+// Needs-attention first (a plan waits on the user, as a review does); done and dropped last.
+const RANK: Record<string, number> = { blocked: 0, plan: 1, review: 1, doing: 2, todo: 3, done: 5, dropped: 6 }
 export const rank = (task: Task) => RANK[stateOf(task.status)] ?? 4
 export const isClosed = (task: Task) => rank(task) >= 5
 
@@ -42,19 +43,26 @@ export const sortTasks = (tasks: readonly Task[]) =>
   )
 
 export const counts = (tasks: readonly Task[]) => {
-  const n = { doing: 0, review: 0, blocked: 0 }
+  const n = { doing: 0, review: 0, blocked: 0, plan: 0 }
   for (const task of tasks) {
     const state = stateOf(task.status)
-    if (state === 'doing' || state === 'review' || state === 'blocked') n[state] += 1
+    if (state === 'doing' || state === 'review' || state === 'blocked' || state === 'plan') n[state] += 1
   }
 
   return n
 }
 
+// The task in plain words: its About: line, else the title.
+export const label = (task: Task) => task.about || task.title
+
+// The owning coordinator session, short, as tasks-index.py prints it.
+export const coord = (task: Task) => task.session.slice(0, 8) || '—'
+
 export const summary = (tasks: readonly Task[], agents: readonly Agent[] = []) => {
   const n = counts(tasks)
   const running = agents.filter(a => a.status === 'running').length
   const parts = [`doing ${n.doing}`, `review ${n.review}`, `blocked ${n.blocked}`]
+  if (n.plan) parts.push(`plan ${n.plan}`)
   if (running) parts.push(`${running} running`)
 
   return parts.join(' · ')
@@ -133,7 +141,7 @@ export const markdown = (tasks: readonly Task[], agents: readonly Agent[], now: 
     const who = agent ? `${task.owner} (${agent.status})` : task.owner
     const stale = quiet !== null && quiet >= 15 ? `quiet ${age(quiet)}` : ''
 
-    return `| ${cell(task.id)} | ${cell(task.title)} | ${stateOf(task.status)} | ${cell(who)} | ${cell(fit(progressWhat(task.last), 60))} | ${stale} |`
+    return `| ${cell(task.id)} | ${cell(label(task))} | ${stateOf(task.status)} | ${cell(who)} | ${cell(coord(task))} | ${cell(fit(progressWhat(task.last), 60))} | ${stale} |`
   })
   const done = (state: string) => closed.filter(task => stateOf(task.status) === state).map(task => task.id)
   const folded = (['done', 'dropped'] as const)
@@ -145,7 +153,7 @@ export const markdown = (tasks: readonly Task[], agents: readonly Agent[], now: 
     `**Board:** ${summary(tasks, agents)}`,
     '',
     ...(rows.length
-      ? ['| ID | Task | Status | Owner | Last progress | Quiet |', '|---|---|---|---|---|---|', ...rows, '']
+      ? ['| ID | Task | Status | Owner | Coordinator | Last progress | Quiet |', '|---|---|---|---|---|---|---|', ...rows, '']
       : []),
     ...folded,
   ]

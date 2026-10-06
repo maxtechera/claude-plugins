@@ -5,7 +5,9 @@ import type { Agent, Task } from '../types'
 import {
   age,
   agentFor,
+  coord,
   isClosed,
+  label,
   markdown,
   mergeAgents,
   parseTask,
@@ -30,6 +32,7 @@ const STATE_COLOR: Record<string, string> = {
   blocked: 'error',
   review: 'warning',
   doing: 'claude',
+  plan: 'planMode',
   todo: 'inactive',
   done: 'success',
   dropped: 'inactive',
@@ -89,7 +92,7 @@ const discover = async ($: EngineInterface, dir: string) => {
   }
 }
 
-// Reads tasks/*.md (not later/ or done/) of the root and of the session's dirs, re-reading only files whose mtime moved.
+// Reads tasks/*.md (not later/, done/ or archive/: files only, no subdirs) of the root and of the session's dirs, re-reading only files whose mtime moved.
 const syncTasks = async ($: EngineInterface, dir: string | null) => {
   const before = await read($, tasks)
   const dirs = [...new Set([...(dir ? [`${dir}/tasks`] : []), ...(await read($, sessionDirs))])]
@@ -157,12 +160,17 @@ export const register: Register = on => {
     discoveredAt = -Infinity
     // 0.1/0.2 pinned the counts with $.ui.status, which draws a warning glyph; the footer label replaces it.
     $.ui.status(undefined)
-    await $.command.register({
-      name: 'coordinator',
-      description: 'Show the task board (tasks/*.md) with live agents',
-    })
+    // Liveness first: a refused /coordinator (another skill or command owns the name) must not stop the board.
     $.clock.every(SYNC_MS, () => void sync($))
     await sync($)
+    try {
+      await $.command.register({
+        name: 'coordinator',
+        description: 'Show the task board (tasks/*.md) with live agents',
+      })
+    } catch (err) {
+      $.ui.log(`coordinator: /coordinator not registered (${err instanceof Error ? err.message : String(err)}); the pane and footer still run`)
+    }
 
     return next(e)
   })
@@ -172,7 +180,7 @@ export const register: Register = on => {
     const composed = await next(e)
     const id = await $.session.id()
     const list = sortTasks(await read($, tasks))
-    const board = list.map(t => `${t.id} | ${t.title} | ${t.status} | ${t.owner}`).join('\n')
+    const board = list.map(t => `${t.id} | ${label(t)} | ${t.status} | ${t.owner} | ${coord(t)}`).join('\n')
     const text = [
       `Coordinator session id: ${id} (use in task headers)`,
       list.length ? `Task board (tasks/*.md, ${summary(list)}):\n${board}` : '',
@@ -240,10 +248,11 @@ export const register: Register = on => {
     const closed = list.length - open.length
     const running = crew.filter(agent => agent.status === 'running')
     const taskOf = (agent: Agent) => list.find(task => agentFor(crew, task)?.id === agent.id)
-    // Fixed columns: marker 2, ID 6, status 8, gap 1, owner 15, quiet 7; the title and (when wide) the last line share the rest.
-    const rest = width - 39
-    const titleW = width >= 110 ? Math.min(32, Math.floor(rest / 2)) : rest
-    const lastW = width >= 110 ? rest - titleW - 1 : 0
+    // Fixed columns: marker 2, ID 6, status 8, gap 1, owner 15, quiet 7, and when wide the coordinator 9; the title and (when wide) the last line share the rest.
+    const wide = width >= 110
+    const rest = width - 39 - (wide ? 9 : 0)
+    const titleW = wide ? Math.min(32, Math.floor(rest / 2)) : rest
+    const lastW = wide ? rest - titleW - 1 : 0
     const room = Math.max(1, (e.viewport?.rows ?? 30) - 6 - running.length)
     const shown = open.slice(0, room)
     const pad = (text: string, n: number) => cut(text, n).padEnd(n)
@@ -280,7 +289,7 @@ export const register: Register = on => {
               <Text color={color}>{'▍ '}</Text>
               <Text bold>{pad(task.id, 6)}</Text>
               <Text color={color}>{pad(state, 8)}</Text>
-              <Text wrap="truncate-end">{pad(task.title, titleW)}</Text>
+              <Text wrap="truncate-end">{pad(label(task), titleW)}</Text>
               <Text> </Text>
               {lastW > 0 && (
                 <Text dimColor wrap="truncate-end">
@@ -290,6 +299,7 @@ export const register: Register = on => {
               <Text color={agent ? AGENT_COLOR[agent.status] ?? 'inactive' : undefined} dimColor={!agent}>
                 {pad(`${agent ? '● ' : ''}${task.owner}`, 15)}
               </Text>
+              {wide && <Text dimColor>{` ${pad(coord(task), 8)}`}</Text>}
               <Text color={isStale ? 'warning' : 'inactive'}>
                 {(quiet === null ? '' : isStale ? `quiet ${age(quiet)}` : age(quiet)).padStart(7)}
               </Text>

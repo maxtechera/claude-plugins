@@ -78,19 +78,9 @@ export const parseTask = (name: string, text: string, mtimeMs: number, dir: stri
   }
 }
 
-// A clip to n characters, ending in an ellipsis when cut.
+// A clip to n characters, ending in an ellipsis when cut. Only for the small fixed-width label columns
+// (ID/P/Status/Agent) — prose cells wrap in a bounded Box instead of being cut.
 export const cut = (text: string, n: number) => (text.length > n ? `${text.slice(0, Math.max(1, n - 1))}…` : text)
-
-// The narrow detail line's two segments — summary+extra, then next — sized so a long summary still leaves
-// next a bounded, visible tail instead of the two being cut together and next silently disappearing.
-export const detailLine = (sum: string, extra: string, next: string, width: number) => {
-  const head = `${sum || '—'}${extra ? ` · ${extra}` : ''}`
-  if (!next || next === '—') return { head: cut(head, width), next: '' }
-  const reserve = Math.min(next.length + 3, Math.max(10, Math.floor(width * 0.25)))
-  const headCut = cut(head, Math.max(4, width - reserve))
-
-  return { head: headCut, next: cut(next, Math.max(4, width - headCut.length - 3)) }
-}
 
 // A cell in plain words: the part before the first ` — ` or `;`, cut at a word to n characters.
 // Text that already reads that way comes back unchanged.

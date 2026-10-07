@@ -1,7 +1,7 @@
 import type { AgentInfo, On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { detailLine, linkify, remoteRepo, short, sortTasks } from './board'
+import { linkify, remoteRepo, short, sortTasks } from './board'
 import type { Task } from '../types'
 
 // 2026-10-06 13:20 local: Progress lines at 13:00 are 20m quiet.
@@ -225,19 +225,26 @@ test('pane at 120 columns: one line per task with every table column', async ($,
   }
 })
 
-test('a short pane drops activity, then folds done to one line', async ($, on) => {
+test('a short pane still shows every done task and activity entry in full — the engine scrolls, the hook does not drop rows', async ($, on) => {
   const fx = fixture()
   fx.files['/repo/tasks/T6.md'] = { text: task('T6', 'More old', 'done(x)', 'Reader', '10:00 Reader | old | — | none\n'), mtimeMs: 1 }
   engine(on, fx)
   await start($)
-  const ui = await $.ui.mount({ ...pane(70, 15), surface: 'terminal' })
-  expect(await keys(ui, /^act-/)).toEqual([])
-  expect(await keys(ui, /^done/)).toEqual(['done-T4', 'done-T6'])
-  await ui.unmount()
-  const tiny = await $.ui.mount({ ...pane(70, 14), surface: 'terminal' })
-  expect(await keys(tiny, /^done/)).toEqual(['done'])
-  expect(await tiny.find({ key: 'done', text: '2 done: T4, T6' })).toBeDefined()
+  const tiny = await $.ui.mount({ ...pane(70, 5), surface: 'terminal' })
+  expect(await keys(tiny, /^act-/)).not.toEqual([])
+  expect(await keys(tiny, /^done/)).toEqual(['done-T4', 'done-T6'])
   await tiny.unmount()
+})
+
+test('activity caps at a flat number, not by how much pane height is left', async ($, on) => {
+  const fx = fixture()
+  const lines = Array.from({ length: 8 }, (_, i) => `${String(i).padStart(2, '0')}:00 Someone | line ${i} | next | none`).join('\n')
+  for (const id of ['T5', 'T6', 'T7', 'T8']) fx.files[`/repo/tasks/${id}.md`] = { text: task(id, id, 'doing', 'Reader', lines), mtimeMs: 1 }
+  engine(on, fx)
+  await start($)
+  const ui = await $.ui.mount({ ...pane(70, 200), surface: 'terminal' })
+  expect((await keys(ui, /^act-/)).length).toBe(20)
+  await ui.unmount()
 })
 
 test('an agent whose brief names a done task follows its open task', async ($, on) => {
@@ -319,17 +326,6 @@ test('short leaves plain-word cells alone and cuts old-style lines at the dash, 
   const cut = short('board parses Priority/Impact/Effort headers and draws the P column everywhere it is shown')
   expect(cut).toBe('board parses Priority/Impact/Effort…')
   expect(cut.length).toBeLessThanOrEqual(40)
-})
-
-test('detailLine keeps a short head whole and gives next a bounded, never-empty tail', () => {
-  // Everything fits: no truncation at all.
-  expect(detailLine('abc', 'xyz', 'next', 100)).toEqual({ head: 'abc · xyz', next: 'next' })
-  // The head alone fits the budget; next only gets what's left, but it still shows something.
-  expect(detailLine('A'.repeat(30), '', 'B'.repeat(30), 40)).toEqual({ head: 'A'.repeat(30), next: `${'B'.repeat(6)}…` })
-  // The head alone would already fill the whole budget: it still yields room so next is never fully swallowed.
-  expect(detailLine('A'.repeat(60), '', 'B'.repeat(10), 40)).toEqual({ head: `${'A'.repeat(29)}…`, next: `${'B'.repeat(6)}…` })
-  // No next: the head gets the full budget and no second segment is produced.
-  expect(detailLine('summary text', '', '', 20)).toEqual({ head: 'summary text', next: '' })
 })
 
 test('remotes and references become GitHub links', () => {

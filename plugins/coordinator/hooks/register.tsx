@@ -11,7 +11,6 @@ import {
   COUNTED,
   counts,
   cut,
-  detailLine,
   isClosed,
   isLive,
   label,
@@ -328,21 +327,15 @@ export const register: Register = on => {
     const live = crew.filter(isLive)
     const n = counts(list)
     const width = Math.max(40, e.props.bodyColumns)
-    const height = Math.max(8, e.props.scroll?.bodyRows ?? (e.viewport?.rows ?? 36) - 6)
     const wide = width >= 120
     const since = (at: number) => age(Math.floor((now - at) / 60000))
     // A column w wide: its text and at least one space.
     const pad = (text: string, w: number) => cut(text, w - 1).padEnd(w)
-
-    // Rows: header, agent cards (2 each) and a gap, table head, open rows (2 each when narrow), other sessions.
-    let detail = !wide
-    const fixed = 1 + live.length * 2 + (live.length ? 1 : 0) + 1 + (others.length ? 1 : 0)
-    if (fixed + open.length * (detail ? 2 : 1) > height) detail = false
-    let rest = height - fixed - open.length * (detail ? 2 : 1)
-    // Done detail outlasts activity: activity goes first, then done folds to one line.
-    const doneRows = closed.length === 0 ? 0 : rest >= closed.length ? closed.length : 1
-    rest -= doneRows
-    const recent = rest >= 3 ? activity(list, Math.min(8, rest - 2)) : []
+    // Content is full length now; the Pane's own scroll (SiteScroll, engine-owned, moved by the person's keys)
+    // handles anything taller than the visible body — this hook no longer budgets rows to decide what to omit.
+    const detail = !wide
+    // A generous, flat window — not fitted to the pane's height.
+    const recent = activity(list, 20)
 
     // Columns: marker 2, ID 5, P (`P1 · H/S` wide, `P1` narrow), status 8, agent 20, last activity
     // (`PR #4 merged` when wide and a row names a PR or commit, else the time); the rest is shared. The
@@ -389,8 +382,8 @@ export const register: Register = on => {
               <Text wrap="truncate-end">{cut(`${doing} · up ${since(agent.spawnedAt)}${model}${ctx}`, width - 26)}</Text>
             </Box>,
             <Box key={`agent-${agent.id}-task`}>
-              <Text dimColor wrap="truncate-end">
-                {cut(`  ${task ? short(label(task)) : agent.description}${task?.summary ? ` — ${short(task.summary)}` : ''}`, width)}
+              <Text dimColor>
+                {`  ${task ? short(label(task)) : agent.description}${task?.summary ? ` — ${short(task.summary)}` : ''}`}
               </Text>
             </Box>,
           ]
@@ -426,7 +419,9 @@ export const register: Register = on => {
                 {pad(wide ? pcell(task) : task.priority ? prioOf(task) : '—', pW)}
               </Text>
               <Text color={color}>{pad(state, 8)}</Text>
-              <Text wrap="truncate-end">{pad(short(label(task)), taskW)}</Text>
+              <Box width={taskW}>
+                <Text>{short(label(task))}</Text>
+              </Box>
               <Text color={agent && isLive(agent) ? 'claude' : undefined} dimColor={!agent || !isLive(agent)}>
                 {pad(`${agent && isLive(agent) ? '● ' : ''}${task.owner || '—'}`, agentW)}
               </Text>
@@ -439,55 +434,48 @@ export const register: Register = on => {
               ) : (
                 <Text color={lastColor}>{pad(task.activity, lastW)}</Text>
               )}
-              {wide && <Text wrap="truncate-end">{pad(sum || '—', sumW)}</Text>}
               {wide && (
-                <Text dimColor wrap="truncate-end">
-                  {pad(msg || '—', msgW)}
-                </Text>
+                <Box width={sumW}>
+                  <Text>{sum || '—'}</Text>
+                </Box>
               )}
-              {wide && <Text wrap="truncate-end">{pad(next || '—', nextW)}</Text>}
+              {wide && (
+                <Box width={msgW}>
+                  <Text dimColor>{msg || '—'}</Text>
+                </Box>
+              )}
+              {wide && (
+                <Box width={nextW}>
+                  <Text>{next || '—'}</Text>
+                </Box>
+              )}
             </Box>,
           ]
-          if (detail) {
-            const artW = art ? artText.length + art.label.length + art.state.length + 4 : 0
-            const { head, next: nextSeg } = detailLine(sum, extra, next, width - 8 - artW)
+          if (detail)
             rows.push(
               <Box key={`task-${task.id}-detail`}>
-                <Text dimColor wrap="truncate-end">
+                <Text dimColor>
                   {'       '}
                   {art && <Link key={`link-${task.id}`} href={art.url} label={`${artText}${art.label}`} />}
                   {art ? ` ${art.state ? `${art.state} · ` : ''}` : ''}
-                  {head}
+                  {sum || '—'}
+                  {extra ? ` · ${extra}` : ''}
                 </Text>
-                {nextSeg && (
-                  <Text bold wrap="truncate-end">
-                    {` → ${nextSeg}`}
-                  </Text>
-                )}
+                {next && next !== '—' && <Text bold>{` → ${next}`}</Text>}
               </Box>,
             )
-          }
 
           return rows
         })}
-        {doneRows > 0 &&
-          (doneRows === closed.length ? (
-            closed.map(task => (
-              <Box key={`done-${task.id}`}>
-                <Text color={stateOf(task.status) === 'done' ? 'success' : 'inactive'}>{'✓ '}</Text>
-                <Text dimColor>{pad(task.id, 5)}</Text>
-                <Text dimColor wrap="truncate-end">
-                  {cut(`${short(label(task))}${task.summary ? ` — ${short(task.summary)}` : ''}`, width - 14)}
-                </Text>
-                <Text dimColor>{` ${task.activity}`}</Text>
+        {closed.length > 0 &&
+          closed.map(task => (
+            <Box key={`done-${task.id}`}>
+              <Text color={stateOf(task.status) === 'done' ? 'success' : 'inactive'}>{'✓ '}</Text>
+              <Text dimColor>{pad(task.id, 5)}</Text>
+              <Box width={Math.max(10, width - 14)}>
+                <Text dimColor>{`${short(label(task))}${task.summary ? ` — ${short(task.summary)}` : ''}`}</Text>
               </Box>
-            ))
-          ) : (
-            <Box key="done">
-              <Text color="success">{'✓ '}</Text>
-              <Text dimColor wrap="truncate-end">
-                {cut(`${closed.length} done: ${closed.map(task => task.id).join(', ')}`, width - 2)}
-              </Text>
+              <Text dimColor>{` ${task.activity}`}</Text>
             </Box>
           ))}
         {recent.length > 0 && <Box key="activity-gap" height={1} />}
@@ -502,7 +490,9 @@ export const register: Register = on => {
           <Box key={`act-${i}`}>
             <Text dimColor>{`${entry.at.padStart(5)} `}</Text>
             <Text bold>{pad(task.id, 5)}</Text>
-            <Text wrap="truncate-end">{cut(`${entry.who ? `${entry.who} · ` : ''}${entry.what}`, width - 11)}</Text>
+            <Box width={Math.max(10, width - 11)}>
+              <Text>{`${entry.who ? `${entry.who} · ` : ''}${entry.what}`}</Text>
+            </Box>
           </Box>
         ))}
         {others.length > 0 && (
